@@ -1,0 +1,15 @@
+[package]
+name = "dot_parse"
+version = "0.1.0"
+authors = ["lk-chen <lkchen_github@outlook.com>"]
+edition = "2018"
+
+[lib]
+name = "libdot_parse"
+path = "src/dot_parse.rs"
+
+[[bin]]
+name = "dot_parse"
+path = "src/bin.rs"
+
+[dependencies]
