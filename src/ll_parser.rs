@@ -1,45 +1,74 @@
+extern crate dot;
 
-pub struct Node {
-    id: String,
-    label: String,
+use std::collections::HashMap;
+
+enum CompassPt {N, NE, E, SE, S, SW, W, NW, C, UND}
+
+pub struct Stmt<'a> {
+    node_stmt: Option<NodeStmt<'a>>,
+    edge_stmt: Option<EdgeStmt<'a>>,
+    attr_stmt: Option<AttrStmt<'a>>,
+    subgraph: Option<SubGraph<'a>>,
+    key_value: (dot::Id<'a>, dot::Id<'a>)
 }
 
-pub struct Edge {
-    from: String,
-    to: String,
-    label: String,
+type StmtList<'a> = Vec<Stmt<'a>>;
+
+pub struct Port<'a> {
+    id: Option<dot::Id<'a>>,
+    compass_pt: Option<CompassPt>
 }
 
-pub struct Graph {
-    nodes: Vec<Node>,
-    edges: Vec<Edge>,
+pub struct NodeId<'a> {
+    id: dot::Id<'a>,
+    port: Option<Port<'a>>
 }
 
-impl Graph {
-    fn add_node(&mut self, node: Node) {
-        self.nodes.push(node)
+type AList<'a> = HashMap<dot::Id<'a>, dot::Id<'a>>;
+
+type AttrList<'a> = Vec<AList<'a>>;
+
+enum AttrStmtKey {GRAPH, NODE, EDGE}
+
+pub struct AttrStmt<'a> {
+    key: AttrStmtKey,
+    attr_list : AttrList<'a>
+}
+
+pub struct NodeStmt<'a> {
+    id: NodeId<'a>,
+    attr_list : Option<AttrList<'a>>
+}
+
+pub struct SubGraph<'a> {
+    id: Option<dot::Id<'a>>,
+    stmt_list: StmtList<'a>
+}
+
+pub struct EdgeRhs<'a> {
+    edgeop: std::borrow::Cow<'a, str>,  //An edgeop is -> in directed graphs and -- in undirected graphs.
+    node_id : Option<NodeId<'a>>,
+    subgraph: Option<SubGraph<'a>>
+}
+
+pub struct EdgeStmt<'a> {
+    node_id : Option<NodeId<'a>>,
+    subgraph: Option<SubGraph<'a>>,
+    rhs: Vec<EdgeRhs<'a>>,
+    attr_list: Option<AttrList<'a>>
+}
+
+pub struct Graph<'a> {
+    strict: bool,
+    kind: dot::Kind,
+    id: Option<dot::Id<'a>>,
+    stmt_list: StmtList<'a>
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn s() {
+        assert!(true);
     }
-}
-
-fn parse_node(node_str: &String) -> Node {
-    Node {
-        id: "abc".to_string(),
-        label: "def".to_string(),
-    }
-}
-
-pub fn parse_graph(graph_str: &str) -> Graph {
-    let tokens: Vec<&str> = graph_str.split_whitespace().collect();
-
-    parse_graph_tokens(&tokens)
-}
-
-fn parse_graph_tokens(graph_tokens: &Vec<&str>) -> Graph {
-    println!("{:?}", graph_tokens);
-    let graph = Graph {
-        nodes: Vec::new(),
-        edges: Vec::new(),
-    };
-
-    graph
 }
