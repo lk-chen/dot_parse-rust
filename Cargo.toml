@@ -14,3 +14,4 @@ path = "src/bin.rs"
 
 [dependencies]
 dot = "0.1.4"
+more-asserts = "0.2.1"
