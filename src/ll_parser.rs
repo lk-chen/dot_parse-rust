@@ -1,6 +1,7 @@
 extern crate dot;
 
 use std::collections::HashMap;
+use std::fmt;
 
 macro_rules! matches(
     ($e:expr, $p:pat) => (
@@ -13,6 +14,25 @@ macro_rules! matches(
 
 #[derive(Copy, Clone)]
 enum CompassPt {N, NE, E, SE, S, SW, W, NW, C, UND}
+
+impl fmt::Debug for CompassPt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let comp_str =
+        match self {
+            CompassPt::N => "N",
+            CompassPt::NE => "NE",
+            CompassPt::E => "E",
+            CompassPt::SE => "SE",
+            CompassPt::S => "S",
+            CompassPt::SW => "SW",
+            CompassPt::W => "W",
+            CompassPt::NW => "NW",
+            CompassPt::C => "C",
+            CompassPt::UND => "UND",
+        };
+        write!(f, "{:?}", comp_str)
+    }
+}
 
 pub struct Stmt<'a> {
     node_stmt: Option<NodeStmt<'a>>,
@@ -30,6 +50,16 @@ pub struct Port<'a> {
     compass_pt: Option<CompassPt>,
 }
 
+impl fmt::Debug for Port<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let id_str: &str = match &self.id {
+            None => "none",
+            Some(a) => a.as_slice()
+        };
+        write!(f, "Port{{{:?}, {:?}}}", id_str, self.compass_pt)
+    }
+}
+
 impl PartialEq for Port<'_> {
     fn eq(&self, other: &Self) -> bool {
         fn id_match(lhs: &Port, rhs: &Port) -> bool {
@@ -42,7 +72,7 @@ impl PartialEq for Port<'_> {
 
         match (self.compass_pt, other.compass_pt) {
             (None, None) => id_match(self, other),
-            (Some(a), Some(_b)) => !matches!(a, _b) && id_match(self, other),
+            (Some(a), Some(_b)) => matches!(a, _b) && id_match(self, other),
             _ => false,
         }
     }
@@ -181,11 +211,26 @@ pub struct Graph<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{NodeId};
+    use super::{NodeId, CompassPt, Port};
 
     #[test]
     fn parse_nodeid() {
         let n1 = NodeId::parse_from(["id1"].to_vec()).unwrap();
         assert_eq!(n1.id.name(), "id1");
+        assert!(n1.port.is_none());
+
+        let n2 = NodeId::parse_from(["id1", ":", "id2"].to_vec()).unwrap();
+        assert_eq!(n2.id.name(), "id1");
+        assert_eq!(n2.port.unwrap().id.unwrap().name(), "id2");
+
+        let n3 = NodeId::parse_from(["id1", ":", "n"].to_vec()).unwrap();
+        assert_eq!(n3.id.name(), "id1");
+        assert!(matches!(n3.port.unwrap().compass_pt.unwrap(), CompassPt::N));
+
+        let n4 = NodeId::parse_from(["id1", ":", "id2", ":", "c"].to_vec()).unwrap();
+        assert_eq!(n4.id.name(), "id1");
+        // assert_eq!(n4.port.as_ref().id.unwrap().name(), "id2");
+        // assert!(matches!(n4.port.unwrap().compass_pt.unwrap(), CompassPt::C));
+        assert_eq!(n4.port.unwrap(), Port{id: Some(::dot::Id::new("id2").unwrap()), compass_pt: Some(CompassPt::C)});
     }
 }
