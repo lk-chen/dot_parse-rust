@@ -12,13 +12,30 @@ macro_rules! matches(
     )
 );
 
+fn unwrap_to_printable<'a>(id: &'a Option<dot::Id<'_>>) -> Option<&'a str> {
+    match &id {
+        None => None,
+        Some(a) => Some(a.as_slice()),
+    }
+}
+
 #[derive(Copy, Clone)]
-enum CompassPt {N, NE, E, SE, S, SW, W, NW, C, UND}
+enum CompassPt {
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    NW,
+    C,
+    UND,
+}
 
 impl fmt::Debug for CompassPt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let comp_str =
-        match self {
+        let comp_str = match self {
             CompassPt::N => "N",
             CompassPt::NE => "NE",
             CompassPt::E => "E",
@@ -39,7 +56,7 @@ pub struct Stmt<'a> {
     edge_stmt: Option<EdgeStmt<'a>>,
     attr_stmt: Option<AttrStmt<'a>>,
     subgraph: Option<SubGraph<'a>>,
-    key_value: (dot::Id<'a>, dot::Id<'a>)
+    key_value: (dot::Id<'a>, dot::Id<'a>),
 }
 
 type StmtList<'a> = Vec<Stmt<'a>>;
@@ -52,11 +69,12 @@ pub struct Port<'a> {
 
 impl fmt::Debug for Port<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let id_str: &str = match &self.id {
-            None => "none",
-            Some(a) => a.as_slice()
-        };
-        write!(f, "Port{{{:?}, {:?}}}", id_str, self.compass_pt)
+        write!(
+            f,
+            "Port{{id={:?}, compass={:?}}}",
+            unwrap_to_printable(&self.id),
+            self.compass_pt
+        )
     }
 }
 
@@ -85,27 +103,32 @@ impl<'a> Port<'a> {
                 return Err(());
             } else {
                 match Port::parse_compass_pt_from(tokens[1]) {
-                    Ok(comp) => Ok(Port{compass_pt: Some(comp), ..Default::default()}),
-                    Err(_) => {
-                        match dot::Id::new(tokens[1]) {
-                            Ok(id) => Ok(Port{id: Some(id), ..Default::default()}),
-                            Err(_) => Err(()),
-                        }
-                    }
+                    Ok(comp) => Ok(Port {
+                        compass_pt: Some(comp),
+                        ..Default::default()
+                    }),
+                    Err(_) => match dot::Id::new(tokens[1]) {
+                        Ok(id) => Ok(Port {
+                            id: Some(id),
+                            ..Default::default()
+                        }),
+                        Err(_) => Err(()),
+                    },
                 }
             }
         } else if tokens.len() == 4 {
             if tokens[0] != ":" || tokens[2] != ":" {
-                return Err(())
+                return Err(());
             } else {
                 match Port::parse_compass_pt_from(tokens[3]) {
                     Err(_) => Err(()),
-                    Ok(comp) => {
-                        match dot::Id::new(tokens[1]) {
-                            Ok(id) => Ok(Port{id: Some(id), compass_pt: Some(comp)}),
-                            Err(_) => Err(())
-                        }
-                    }
+                    Ok(comp) => match dot::Id::new(tokens[1]) {
+                        Ok(id) => Ok(Port {
+                            id: Some(id),
+                            compass_pt: Some(comp),
+                        }),
+                        Err(_) => Err(()),
+                    },
                 }
             }
         } else {
@@ -117,7 +140,7 @@ impl<'a> Port<'a> {
         match token {
             "n" => Ok(CompassPt::N),
             "ne" => Ok(CompassPt::NE),
-            "e" => Ok(CompassPt::E) ,
+            "e" => Ok(CompassPt::E),
             "se" => Ok(CompassPt::SE),
             "s" => Ok(CompassPt::S),
             "sw" => Ok(CompassPt::SW),
@@ -132,7 +155,7 @@ impl<'a> Port<'a> {
 
 pub struct NodeId<'a> {
     id: dot::Id<'a>,
-    port: Option<Port<'a>>
+    port: Option<Port<'a>>,
 }
 
 impl<'a> NodeId<'a> {
@@ -142,18 +165,16 @@ impl<'a> NodeId<'a> {
         }
         match dot::Id::new(tokens[0]) {
             Err(_) => Err(()),
-            Ok(id) => {
-                match NodeId::parse_option_port_from(tokens[1..].to_vec()) {
-                    Err(_) => Err(()),
-                    Ok(port) => Ok(NodeId{id: id, port: port}),
-                }
-            }
+            Ok(id) => match NodeId::parse_option_port_from(tokens[1..].to_vec()) {
+                Err(_) => Err(()),
+                Ok(port) => Ok(NodeId { id: id, port: port }),
+            },
         }
     }
 
     fn parse_option_port_from(tokens: Vec<&str>) -> Result<Option<Port<'_>>, ()> {
         if tokens.len() == 0 {
-            return Ok(None)
+            return Ok(None);
         }
         match Port::parse_from(tokens) {
             Ok(port) => Ok(Some(port)),
@@ -166,41 +187,45 @@ type AList<'a> = HashMap<dot::Id<'a>, dot::Id<'a>>;
 
 type AttrList<'a> = Vec<AList<'a>>;
 
-enum AttrStmtKey {GRAPH, NODE, EDGE}
+enum AttrStmtKey {
+    GRAPH,
+    NODE,
+    EDGE,
+}
 
 pub struct AttrStmt<'a> {
     key: AttrStmtKey,
-    attr_list : AttrList<'a>
+    attr_list: AttrList<'a>,
 }
 
 pub struct NodeStmt<'a> {
     id: NodeId<'a>,
-    attr_list : Option<AttrList<'a>>
+    attr_list: Option<AttrList<'a>>,
 }
 
 pub struct SubGraph<'a> {
     id: Option<dot::Id<'a>>,
-    stmt_list: StmtList<'a>
+    stmt_list: StmtList<'a>,
 }
 
 pub struct EdgeRhs<'a> {
-    edgeop: std::borrow::Cow<'a, str>,  //An edgeop is -> in directed graphs and -- in undirected graphs.
-    node_id : Option<NodeId<'a>>,
-    subgraph: Option<SubGraph<'a>>
+    edgeop: std::borrow::Cow<'a, str>, //An edgeop is -> in directed graphs and -- in undirected graphs.
+    node_id: Option<NodeId<'a>>,
+    subgraph: Option<SubGraph<'a>>,
 }
 
 pub struct EdgeStmt<'a> {
-    node_id : Option<NodeId<'a>>,
+    node_id: Option<NodeId<'a>>,
     subgraph: Option<SubGraph<'a>>,
     rhs: Vec<EdgeRhs<'a>>,
-    attr_list: Option<AttrList<'a>>
+    attr_list: Option<AttrList<'a>>,
 }
 
 pub struct Graph<'a> {
     strict: bool,
     kind: dot::Kind,
     id: Option<dot::Id<'a>>,
-    stmt_list: StmtList<'a>
+    stmt_list: StmtList<'a>,
 }
 
 // impl NodeStmt<'_> {
@@ -211,7 +236,31 @@ pub struct Graph<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{NodeId, CompassPt, Port};
+    use super::{CompassPt, NodeId, Port};
+
+    #[test]
+    fn format_print() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                Port {
+                    id: Some(::dot::Id::new("id_1").unwrap()),
+                    ..Default::default()
+                }
+            ),
+            "Port{id=Some(\"id_1\"), compass=None}"
+        );
+        assert_eq!(
+            format!(
+                "{:?}",
+                Port {
+                    compass_pt: Some(CompassPt::NE),
+                    ..Default::default()
+                }
+            ),
+            "Port{id=None, compass=Some(\"NE\")}"
+        );
+    }
 
     #[test]
     fn parse_nodeid() {
@@ -229,8 +278,12 @@ mod tests {
 
         let n4 = NodeId::parse_from(["id1", ":", "id2", ":", "c"].to_vec()).unwrap();
         assert_eq!(n4.id.name(), "id1");
-        // assert_eq!(n4.port.as_ref().id.unwrap().name(), "id2");
-        // assert!(matches!(n4.port.unwrap().compass_pt.unwrap(), CompassPt::C));
-        assert_eq!(n4.port.unwrap(), Port{id: Some(::dot::Id::new("id2").unwrap()), compass_pt: Some(CompassPt::C)});
+        assert_eq!(
+            n4.port.unwrap(),
+            Port {
+                id: Some(::dot::Id::new("id2").unwrap()),
+                compass_pt: Some(CompassPt::C)
+            }
+        );
     }
 }
