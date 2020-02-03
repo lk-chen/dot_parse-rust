@@ -33,16 +33,16 @@ pub struct Port<'a> {
 impl PartialEq for Port<'_> {
     fn eq(&self, other: &Self) -> bool {
         fn id_match(lhs: &Port, rhs: &Port) -> bool {
-            match ((*lhs).id, (*rhs).id) {
+            match ((*lhs).id.as_ref(), (*rhs).id.as_ref()) {
                 (None, None) => true,
-                (Some(a), Some(b)) => a.name() == b.name(),
+                (Some(a), Some(b)) => a.as_slice() == b.as_slice(),
                 _ => false,
             }
         }
 
         match (self.compass_pt, other.compass_pt) {
             (None, None) => id_match(self, other),
-            (Some(a), Some(b)) => !matches!(a, b) && id_match(self, other),
+            (Some(a), Some(_b)) => !matches!(a, _b) && id_match(self, other),
             _ => false,
         }
     }
