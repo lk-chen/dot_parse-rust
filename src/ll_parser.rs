@@ -183,9 +183,41 @@ impl<'a> NodeId<'a> {
     }
 }
 
-type AList<'a> = HashMap<dot::Id<'a>, dot::Id<'a>>;
+// define AListImpl so it's easy to change to another impl.
+type AListImpl<'a> = HashMap<std::borrow::Cow<'a, str>, dot::Id<'a>>;
 
-type AttrList<'a> = Vec<AList<'a>>;
+trait AList {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AListImpl<'a>, ()>;
+}
+
+impl AList for AListImpl<'_> {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AListImpl<'a>, ()> {
+        match tokens.len() {
+            0 => Ok(HashMap::new()),
+            // exclusive range is experimental
+            1 => Err(()),
+            2 => Err(()),
+            _ => match Self::parse_from(&tokens[3..]) {
+                Err(err_msg) => Err(err_msg),
+                Ok(mut sub_list) => {
+                    if tokens[1] != "=" {
+                        Err(())
+                    } else {
+                        match dot::Id::new(tokens[2]) {
+                            Err(_) => Err(()),
+                            Ok(id) => {
+                                sub_list.insert(std::borrow::Cow::Borrowed(tokens[0]), id);
+                                Ok(sub_list)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+type AttrList<'a> = Vec<AListImpl<'a>>;
 
 enum AttrStmtKey {
     GRAPH,
