@@ -397,22 +397,32 @@ mod tests {
 
     #[test]
     fn parse_attrlist() {
-        let attr_list_1 = AttrListImpl::parse_from(&[]).unwrap();
-        assert!(attr_list_1.is_empty());
+        {
+            let attr_list = AttrListImpl::parse_from(&[]).unwrap();
+            assert!(attr_list.is_empty());
+        }
 
-        let attr_list_2 = AttrListImpl::parse_from(&["[", "id1", "=", "value1", "]"]).unwrap();
-        assert_eq!(attr_list_2.len(), 1);
-        assert!(alist_entry_match(&attr_list_2[0], "id1", "value1"));
+        {
+            let attr_list = AttrListImpl::parse_from(&["[", "id1", "=", "value1", "]"]).unwrap();
+            assert_eq!(attr_list.len(), 1);
+            assert!(alist_entry_match(&attr_list[0], "id1", "value1"));
+        }
 
-        let attr_list_3 =
-            AttrListImpl::parse_from(&["[", "]", "[", "id1", "=", "value1", "]"]).unwrap();
-        assert_eq!(attr_list_3.len(), 2);
+        {
+            let attr_list =
+                AttrListImpl::parse_from(&["[", "]", "[", "id1", "=", "value1", "]"]).unwrap();
+            assert_eq!(attr_list.len(), 2);
+        }
 
-        let attr_list_4 =
-            AttrListImpl::parse_from(&["[", "]", ",", "[", "id1", "=", "value1", "]"]);
-        assert!(!attr_list_4.is_ok(), attr_list_4.unwrap());
+        {
+            let attr_list =
+                AttrListImpl::parse_from(&["[", "]", ",", "[", "id1", "=", "value1", "]"]);
+            assert!(!attr_list.is_ok(), attr_list.unwrap());
+        }
 
-        let attr_list_5 = AttrListImpl::parse_from(&["[", "]", "[", "id1", "value1", "]"]);
-        assert!(!attr_list_5.is_ok(), attr_list_5.unwrap());
+        {
+            let attr_list = AttrListImpl::parse_from(&["[", "]", "[", "id1", "value1", "]"]);
+            assert!(!attr_list.is_ok(), attr_list.unwrap());
+        }
     }
 }
