@@ -236,26 +236,24 @@ impl AttriList for AttrListImpl<'_> {
     fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, ()> {
         match tokens.first() {
             None => Ok(AttrListImpl::new()),
-            Some(&"[") => {
-                match tokens.iter().position(|x| x == &"]") {
-                    None => Err(()),
-                    Some(idx_right_bracket) => {
-                        match Self::parse_from(&tokens[idx_right_bracket+1..]) {
-                            Err(err_msg) => Err(err_msg),
-                            Ok(mut sub_attr_list) => {
-                                match AListImpl::parse_from(&tokens[1..idx_right_bracket]) {
-                                    Err(err_msg) => Err(err_msg),
-                                    Ok(a_list) => {
-                                        sub_attr_list.push(a_list);
-                                        Ok(sub_attr_list)
-                                    }
+            Some(&"[") => match tokens.iter().position(|x| x == &"]") {
+                None => Err(()),
+                Some(idx_right_bracket) => {
+                    match Self::parse_from(&tokens[idx_right_bracket + 1..]) {
+                        Err(err_msg) => Err(err_msg),
+                        Ok(mut sub_attr_list) => {
+                            match AListImpl::parse_from(&tokens[1..idx_right_bracket]) {
+                                Err(err_msg) => Err(err_msg),
+                                Ok(a_list) => {
+                                    sub_attr_list.push(a_list);
+                                    Ok(sub_attr_list)
                                 }
                             }
                         }
                     }
                 }
             },
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -309,7 +307,7 @@ pub struct Graph<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AList, AListImpl, CompassPt, NodeId, Port};
+    use super::{AList, AListImpl, AttrListImpl, AttriList, CompassPt, NodeId, Port};
 
     #[test]
     fn format_print() {
@@ -360,6 +358,15 @@ mod tests {
         );
     }
 
+    // Helper function to check if (key, value) exists in |alist|.
+    fn alist_entry_match(alist: &AListImpl, key: &str, value: &str) -> bool {
+        alist
+            .get(std::borrow::Borrow::borrow(key))
+            .unwrap()
+            .as_slice()
+            == value
+    }
+
     #[test]
     fn parse_alist() {
         let alist_1 = AListImpl::parse_from(&[]).unwrap();
@@ -367,54 +374,45 @@ mod tests {
 
         let alist_2 = AListImpl::parse_from(&["id1", "=", "value1"]).unwrap();
         assert_eq!(alist_2.len(), 1);
-        assert_eq!(
-            alist_2
-                .get(std::borrow::Borrow::borrow("id1"))
-                .unwrap()
-                .as_slice(),
-            "value1"
-        );
+        assert!(alist_entry_match(&alist_2, "id1", "value1"));
 
         let alist_3 =
             AListImpl::parse_from(&["id1", "=", "value1", ";", "id2", "=", "value2"]).unwrap();
         assert_eq!(alist_3.len(), 2);
-        assert_eq!(
-            alist_3
-                .get(std::borrow::Borrow::borrow("id1"))
-                .unwrap()
-                .as_slice(),
-            "value1"
-        );
-        assert_eq!(
-            alist_3
-                .get(std::borrow::Borrow::borrow("id2"))
-                .unwrap()
-                .as_slice(),
-            "value2"
-        );
+        assert!(alist_entry_match(&alist_3, "id1", "value1"));
+        assert!(alist_entry_match(&alist_3, "id2", "value2"));
 
         let alist_4 =
             AListImpl::parse_from(&["id1", "=", "value1", "id2", "=", "value2", ","]).unwrap();
         assert_eq!(alist_4.len(), 2);
-        assert_eq!(
-            alist_4
-                .get(std::borrow::Borrow::borrow("id1"))
-                .unwrap()
-                .as_slice(),
-            "value1"
-        );
-        assert_eq!(
-            alist_4
-                .get(std::borrow::Borrow::borrow("id2"))
-                .unwrap()
-                .as_slice(),
-            "value2"
-        );
+        assert!(alist_entry_match(&alist_4, "id1", "value1"));
+        assert!(alist_entry_match(&alist_4, "id2", "value2"));
 
         let alist_5 = AListImpl::parse_from(&["id1", "value1"]);
         assert!(!alist_5.is_ok(), alist_5.unwrap());
 
         let alist_6 = AListImpl::parse_from(&["id1", "=", "value1", ":"]);
         assert!(!alist_6.is_ok(), alist_6.unwrap());
+    }
+
+    #[test]
+    fn parse_attrlist() {
+        let attr_list_1 = AttrListImpl::parse_from(&[]).unwrap();
+        assert!(attr_list_1.is_empty());
+
+        let attr_list_2 = AttrListImpl::parse_from(&["[", "id1", "=", "value1", "]"]).unwrap();
+        assert_eq!(attr_list_2.len(), 1);
+        assert!(alist_entry_match(&attr_list_2[0], "id1", "value1"));
+
+        let attr_list_3 =
+            AttrListImpl::parse_from(&["[", "]", "[", "id1", "=", "value1", "]"]).unwrap();
+        assert_eq!(attr_list_3.len(), 2);
+
+        let attr_list_4 =
+            AttrListImpl::parse_from(&["[", "]", ",", "[", "id1", "=", "value1", "]"]);
+        assert!(!attr_list_4.is_ok(), attr_list_4.unwrap());
+
+        let attr_list_5 = AttrListImpl::parse_from(&["[", "]", "[", "id1", "value1", "]"]);
+        assert!(!attr_list_5.is_ok(), attr_list_5.unwrap());
     }
 }
