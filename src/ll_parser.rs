@@ -160,25 +160,25 @@ pub struct NodeId<'a> {
 
 impl<'a> NodeId<'a> {
     fn parse_from(tokens: Vec<&str>) -> Result<NodeId<'_>, ()> {
+        fn parse_option_port_from(tokens: Vec<&str>) -> Result<Option<Port<'_>>, ()> {
+            if tokens.len() == 0 {
+                return Ok(None);
+            }
+            match Port::parse_from(tokens) {
+                Ok(port) => Ok(Some(port)),
+                Err(_) => Err(()),
+            }
+        };
+
         if tokens.len() == 0 {
             return Err(());
         }
         match dot::Id::new(tokens[0]) {
             Err(_) => Err(()),
-            Ok(id) => match NodeId::parse_option_port_from(tokens[1..].to_vec()) {
+            Ok(id) => match parse_option_port_from(tokens[1..].to_vec()) {
                 Err(_) => Err(()),
                 Ok(port) => Ok(NodeId { id: id, port: port }),
             },
-        }
-    }
-
-    fn parse_option_port_from(tokens: Vec<&str>) -> Result<Option<Port<'_>>, ()> {
-        if tokens.len() == 0 {
-            return Ok(None);
-        }
-        match Port::parse_from(tokens) {
-            Ok(port) => Ok(Some(port)),
-            Err(_) => Err(()),
         }
     }
 }
