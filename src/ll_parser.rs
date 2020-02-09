@@ -159,7 +159,7 @@ pub struct NodeId<'a> {
 }
 
 impl<'a> NodeId<'a> {
-    fn parse_from(tokens: Vec<&str>) -> Result<NodeId<'_>, ()> {
+    fn parse_from(tokens: &[&'a str]) -> Result<NodeId<'a>, ()> {
         fn parse_option_port_from(tokens: Vec<&str>) -> Result<Option<Port<'_>>, ()> {
             if tokens.len() == 0 {
                 return Ok(None);
@@ -272,6 +272,32 @@ pub struct AttrStmt<'a> {
 pub struct NodeStmt<'a> {
     id: NodeId<'a>,
     attr_list: Option<AttrListImpl<'a>>,
+}
+
+impl<'a> NodeStmt<'a> {
+    fn parse_from(tokens: &[&'a str]) -> Result<NodeStmt<'a>, ()> {
+        match tokens.iter().position(|x| x == &"[") {
+            None => match NodeId::parse_from(tokens) {
+                Err(err_msg) => Err(err_msg),
+                Ok(node_id) => Ok(NodeStmt {
+                    id: node_id,
+                    attr_list: None,
+                }),
+            },
+            Some(idx_left_bracket) => {
+                match (
+                    NodeId::parse_from(&tokens[..idx_left_bracket]),
+                    AttrListImpl::parse_from(&tokens[idx_left_bracket..]),
+                ) {
+                    (Ok(node_id), Ok(attr_list)) => Ok(NodeStmt {
+                        id: node_id,
+                        attr_list: Some(attr_list),
+                    }),
+                    _ => Err(()),
+                }
+            }
+        }
+    }
 }
 
 pub struct SubGraph<'a> {
