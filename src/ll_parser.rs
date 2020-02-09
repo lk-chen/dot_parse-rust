@@ -325,12 +325,6 @@ pub struct Graph<'a> {
     stmt_list: StmtList<'a>,
 }
 
-// impl NodeStmt<'_> {
-//     fn parse_from(tokens: Vec<&str>) -> Result<NodeStmt<'_>, &'static str> {
-
-//     }
-// }
-
 #[cfg(test)]
 mod tests {
     use super::*;
