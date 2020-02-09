@@ -451,4 +451,41 @@ mod tests {
             assert!(!attr_list.is_ok(), attr_list.unwrap());
         }
     }
+
+    #[test]
+    fn parse_node_stmt() {
+        {
+            let node_stmt = NodeStmt::parse_from(&[]);
+            assert!(!node_stmt.is_ok(), node_stmt.unwrap());
+        }
+
+        {
+            let tokens: Vec<&str> = "id1 : id2 : nw".split_whitespace().collect();
+            let node_stmt = NodeStmt::parse_from(tokens.as_slice()).unwrap();
+            assert_eq!(node_stmt.id.id.name(), "id1");
+            assert_eq!(
+                node_stmt.id.port.unwrap(),
+                Port {
+                    id: Some(::dot::Id::new("id2").unwrap()),
+                    compass_pt: Some(CompassPt::NW)
+                }
+            )
+        }
+
+        {
+            let tokens: Vec<&str> = "id1 [ id2 = value2 ]".split_whitespace().collect();
+            let node_stmt = NodeStmt::parse_from(tokens.as_slice()).unwrap();
+            assert_eq!(node_stmt.id.id.name(), "id1");
+            assert_eq!(node_stmt.attr_list.unwrap().len(), 1)
+        }
+
+        {
+            let tokens: Vec<&str> = "id1 : id2 : sw [ id3 = value3 ] [ id4 = value4 ]"
+                .split_whitespace()
+                .collect();
+            let node_stmt = NodeStmt::parse_from(tokens.as_slice()).unwrap();
+            assert_eq!(node_stmt.id.id.name(), "id1");
+            assert_eq!(node_stmt.attr_list.unwrap().len(), 2)
+        }
+    }
 }
