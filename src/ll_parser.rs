@@ -264,31 +264,49 @@ enum AttrStmtKey {
     EDGE,
 }
 
+impl PartialEq for AttrStmtKey {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(self, other)
+    }
+}
+
+impl fmt::Debug for AttrStmtKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            AttrStmtKey::GRAPH => "GRAPH",
+            AttrStmtKey::NODE => "NODE",
+            AttrStmtKey::EDGE => "EDGE",
+        };
+        write!(f, "{:?}", s)
+    }
+}
+
 pub struct AttrStmt<'a> {
     key: AttrStmtKey,
     attr_list: AttrListImpl<'a>,
 }
 
 impl<'a> AttrStmt<'a> {
-    fn parse_from(tokens: &[&'a str]) -> Result<AttrStmt<'a>, ()> {
-        fn parse_helper<'b>(
-            attr_key: AttrStmtKey,
-            rest_tokens: &[&'b str],
-        ) -> Result<AttrStmt<'b>, ()> {
-            match AttrListImpl::parse_from(rest_tokens) {
-                Err(err_msg) => Err(err_msg),
-                Ok(attr_list) => Ok(AttrStmt {
-                    key: attr_key,
-                    attr_list: attr_list,
-                }),
-            }
-        };
+    fn parse_from(tokens: &[&'a str]) -> Result<AttrStmt<'a>, (usize, &'a str)> {
+        let parse_helper =
+            |attr_key: AttrStmtKey, tokens: &[&'a str]| -> Result<AttrStmt<'a>, (usize, &'a str)> {
+                match AttrListImpl::parse_from(&tokens[1..]) {
+                    Err(err_msg) => Err((1, &"error parsing AttrList")),
+                    Ok(attr_list) => match attr_list.len() {
+                        0 => Err((1, &"require at least one AttrList for AttrStmt")),
+                        _ => Ok(AttrStmt {
+                            key: attr_key,
+                            attr_list: attr_list,
+                        }),
+                    },
+                }
+            };
 
         match tokens.first() {
-            Some(&"graph") => parse_helper(AttrStmtKey::GRAPH, &tokens[1..]),
-            Some(&"node") => parse_helper(AttrStmtKey::NODE, &tokens[1..]),
-            Some(&"edge") => parse_helper(AttrStmtKey::EDGE, &tokens[1..]),
-            _ => Err(()),
+            Some(&"graph") => parse_helper(AttrStmtKey::GRAPH, &tokens),
+            Some(&"node") => parse_helper(AttrStmtKey::NODE, &tokens),
+            Some(&"edge") => parse_helper(AttrStmtKey::EDGE, &tokens),
+            _ => Err((0, &"AttrStmt must starts with graph|node|edge")),
         }
     }
 }
@@ -504,6 +522,33 @@ mod tests {
             let node_stmt = NodeStmt::parse_from(tokens.as_slice()).unwrap();
             assert_eq!(node_stmt.id.id.name(), "id1");
             assert_eq!(node_stmt.attr_list.unwrap().len(), 2)
+        }
+    }
+
+    #[test]
+    fn parse_attr_stmt() {
+        {
+            let tokens: Vec<&str> = "[ ]".split_whitespace().collect();
+            let node_stmt = AttrStmt::parse_from(tokens.as_slice());
+            assert!(!node_stmt.is_ok(), node_stmt.unwrap());
+        }
+
+        {
+            let tokens: Vec<&str> = "graph [ ]".split_whitespace().collect();
+            let node_stmt = AttrStmt::parse_from(tokens.as_slice()).unwrap();
+            assert_eq!(node_stmt.key, AttrStmtKey::GRAPH);
+        }
+
+        {
+            let tokens: Vec<&str> = "edge".split_whitespace().collect();
+            let node_stmt = AttrStmt::parse_from(tokens.as_slice());
+            assert!(!node_stmt.is_ok(), node_stmt.unwrap());
+        }
+
+        {
+            let tokens: Vec<&str> = "other_keyword []".split_whitespace().collect();
+            let node_stmt = AttrStmt::parse_from(tokens.as_slice());
+            assert!(!node_stmt.is_ok(), node_stmt.unwrap());
         }
     }
 }
