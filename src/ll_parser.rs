@@ -226,7 +226,39 @@ impl AList for AListImpl<'_> {
     }
 }
 
-type AttrList<'a> = Vec<AListImpl<'a>>;
+type AttrListImpl<'a> = Vec<AListImpl<'a>>;
+
+trait AttriList {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, ()>;
+}
+
+impl AttriList for AttrListImpl<'_> {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, ()> {
+        match tokens.first() {
+            None => Ok(AttrListImpl::new()),
+            Some(&"[") => {
+                match tokens.iter().position(|x| x == &"]") {
+                    None => Err(()),
+                    Some(idx_right_bracket) => {
+                        match Self::parse_from(&tokens[idx_right_bracket+1..]) {
+                            Err(err_msg) => Err(err_msg),
+                            Ok(mut sub_attr_list) => {
+                                match AListImpl::parse_from(&tokens[1..idx_right_bracket]) {
+                                    Err(err_msg) => Err(err_msg),
+                                    Ok(a_list) => {
+                                        sub_attr_list.push(a_list);
+                                        Ok(sub_attr_list)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            _ => Err(())
+        }
+    }
+}
 
 enum AttrStmtKey {
     GRAPH,
@@ -236,12 +268,12 @@ enum AttrStmtKey {
 
 pub struct AttrStmt<'a> {
     key: AttrStmtKey,
-    attr_list: AttrList<'a>,
+    attr_list: AttrListImpl<'a>,
 }
 
 pub struct NodeStmt<'a> {
     id: NodeId<'a>,
-    attr_list: Option<AttrList<'a>>,
+    attr_list: Option<AttrListImpl<'a>>,
 }
 
 pub struct SubGraph<'a> {
@@ -259,7 +291,7 @@ pub struct EdgeStmt<'a> {
     node_id: Option<NodeId<'a>>,
     subgraph: Option<SubGraph<'a>>,
     rhs: Vec<EdgeRhs<'a>>,
-    attr_list: Option<AttrList<'a>>,
+    attr_list: Option<AttrListImpl<'a>>,
 }
 
 pub struct Graph<'a> {
