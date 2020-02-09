@@ -97,7 +97,7 @@ impl PartialEq for Port<'_> {
 }
 
 impl<'a> Port<'a> {
-    fn parse_from(tokens: Vec<&str>) -> Result<Port<'_>, ()> {
+    fn parse_from(tokens: &[&'a str]) -> Result<Port<'a>, ()> {
         fn parse_compass_pt_from(token: &str) -> Result<CompassPt, ()> {
             match token {
                 "n" => Ok(CompassPt::N),
@@ -160,7 +160,7 @@ pub struct NodeId<'a> {
 
 impl<'a> NodeId<'a> {
     fn parse_from(tokens: &[&'a str]) -> Result<NodeId<'a>, ()> {
-        fn parse_option_port_from(tokens: Vec<&str>) -> Result<Option<Port<'_>>, ()> {
+        fn parse_option_port_from<'b>(tokens: &[&'b str]) -> Result<Option<Port<'b>>, ()> {
             if tokens.len() == 0 {
                 return Ok(None);
             }
@@ -175,7 +175,7 @@ impl<'a> NodeId<'a> {
         }
         match dot::Id::new(tokens[0]) {
             Err(_) => Err(()),
-            Ok(id) => match parse_option_port_from(tokens[1..].to_vec()) {
+            Ok(id) => match parse_option_port_from(&tokens[1..]) {
                 Err(_) => Err(()),
                 Ok(port) => Ok(NodeId { id: id, port: port }),
             },
@@ -333,7 +333,7 @@ pub struct Graph<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AList, AListImpl, AttrListImpl, AttriList, CompassPt, NodeId, Port};
+    use super::*;
 
     #[test]
     fn format_print() {
@@ -361,19 +361,19 @@ mod tests {
 
     #[test]
     fn parse_nodeid() {
-        let n1 = NodeId::parse_from(["id1"].to_vec()).unwrap();
+        let n1 = NodeId::parse_from(&["id1"]).unwrap();
         assert_eq!(n1.id.name(), "id1");
         assert!(n1.port.is_none());
 
-        let n2 = NodeId::parse_from(["id1", ":", "id2"].to_vec()).unwrap();
+        let n2 = NodeId::parse_from(&["id1", ":", "id2"]).unwrap();
         assert_eq!(n2.id.name(), "id1");
         assert_eq!(n2.port.unwrap().id.unwrap().name(), "id2");
 
-        let n3 = NodeId::parse_from(["id1", ":", "n"].to_vec()).unwrap();
+        let n3 = NodeId::parse_from(&["id1", ":", "n"]).unwrap();
         assert_eq!(n3.id.name(), "id1");
         assert!(matches!(n3.port.unwrap().compass_pt.unwrap(), CompassPt::N));
 
-        let n4 = NodeId::parse_from(["id1", ":", "id2", ":", "c"].to_vec()).unwrap();
+        let n4 = NodeId::parse_from(&["id1", ":", "id2", ":", "c"]).unwrap();
         assert_eq!(n4.id.name(), "id1");
         assert_eq!(
             n4.port.unwrap(),
