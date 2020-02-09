@@ -98,11 +98,27 @@ impl PartialEq for Port<'_> {
 
 impl<'a> Port<'a> {
     fn parse_from(tokens: Vec<&str>) -> Result<Port<'_>, ()> {
+        fn parse_compass_pt_from(token: &str) -> Result<CompassPt, ()> {
+            match token {
+                "n" => Ok(CompassPt::N),
+                "ne" => Ok(CompassPt::NE),
+                "e" => Ok(CompassPt::E),
+                "se" => Ok(CompassPt::SE),
+                "s" => Ok(CompassPt::S),
+                "sw" => Ok(CompassPt::SW),
+                "w" => Ok(CompassPt::W),
+                "nw" => Ok(CompassPt::NW),
+                "c" => Ok(CompassPt::C),
+                "_" => Ok(CompassPt::UND),
+                _ => Err(()),
+            }
+        };
+
         if tokens.len() == 2 {
             if tokens[0] != ":" {
                 return Err(());
             } else {
-                match Port::parse_compass_pt_from(tokens[1]) {
+                match parse_compass_pt_from(tokens[1]) {
                     Ok(comp) => Ok(Port {
                         compass_pt: Some(comp),
                         ..Default::default()
@@ -120,7 +136,7 @@ impl<'a> Port<'a> {
             if tokens[0] != ":" || tokens[2] != ":" {
                 return Err(());
             } else {
-                match Port::parse_compass_pt_from(tokens[3]) {
+                match parse_compass_pt_from(tokens[3]) {
                     Err(_) => Err(()),
                     Ok(comp) => match dot::Id::new(tokens[1]) {
                         Ok(id) => Ok(Port {
@@ -133,22 +149,6 @@ impl<'a> Port<'a> {
             }
         } else {
             Err(())
-        }
-    }
-
-    fn parse_compass_pt_from(token: &str) -> Result<CompassPt, ()> {
-        match token {
-            "n" => Ok(CompassPt::N),
-            "ne" => Ok(CompassPt::NE),
-            "e" => Ok(CompassPt::E),
-            "se" => Ok(CompassPt::SE),
-            "s" => Ok(CompassPt::S),
-            "sw" => Ok(CompassPt::SW),
-            "w" => Ok(CompassPt::W),
-            "nw" => Ok(CompassPt::NW),
-            "c" => Ok(CompassPt::C),
-            "_" => Ok(CompassPt::UND),
-            _ => Err(()),
         }
     }
 }
