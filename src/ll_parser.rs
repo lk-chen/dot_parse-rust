@@ -269,6 +269,30 @@ pub struct AttrStmt<'a> {
     attr_list: AttrListImpl<'a>,
 }
 
+impl<'a> AttrStmt<'a> {
+    fn parse_from(tokens: &[&'a str]) -> Result<AttrStmt<'a>, ()> {
+        fn parse_helper<'b>(
+            attr_key: AttrStmtKey,
+            rest_tokens: &[&'b str],
+        ) -> Result<AttrStmt<'b>, ()> {
+            match AttrListImpl::parse_from(rest_tokens) {
+                Err(err_msg) => Err(err_msg),
+                Ok(attr_list) => Ok(AttrStmt {
+                    key: attr_key,
+                    attr_list: attr_list,
+                }),
+            }
+        };
+
+        match tokens.first() {
+            Some(&"graph") => parse_helper(AttrStmtKey::GRAPH, &tokens[1..]),
+            Some(&"node") => parse_helper(AttrStmtKey::NODE, &tokens[1..]),
+            Some(&"edge") => parse_helper(AttrStmtKey::EDGE, &tokens[1..]),
+            _ => Err(()),
+        }
+    }
+}
+
 pub struct NodeStmt<'a> {
     id: NodeId<'a>,
     attr_list: Option<AttrListImpl<'a>>,
