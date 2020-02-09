@@ -228,32 +228,48 @@ impl AList for AListImpl<'_> {
 
 type AttrListImpl<'a> = Vec<AListImpl<'a>>;
 
-trait AttriList {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, ()>;
+trait AttrList {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, (usize, &'a str)>;
 }
 
-impl AttriList for AttrListImpl<'_> {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, ()> {
-        match tokens.first() {
-            None => Ok(AttrListImpl::new()),
-            Some(&"[") => match tokens.iter().position(|x| x == &"]") {
-                None => Err(()),
-                Some(idx_right_bracket) => {
-                    match Self::parse_from(&tokens[idx_right_bracket + 1..]) {
-                        Err(err_msg) => Err(err_msg),
-                        Ok(mut sub_attr_list) => {
-                            match AListImpl::parse_from(&tokens[1..idx_right_bracket]) {
-                                Err(err_msg) => Err(err_msg),
-                                Ok(a_list) => {
-                                    sub_attr_list.push(a_list);
-                                    Ok(sub_attr_list)
+impl AttrList for AttrListImpl<'_> {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, (usize, &'a str)> {
+        // Recursive closure not allowed.
+        struct Internal {}
+        impl Internal {
+            fn parse_helper<'b>(tokens: &[&'b str]) -> Result<AttrListImpl<'b>, (usize, &'b str)> {
+                match tokens.first() {
+                    None => Ok(AttrListImpl::new()),
+                    Some(&"[") => match tokens.iter().position(|x| x == &"]") {
+                        None => Err((tokens.len(), &"expecting ']'")),
+                        Some(idx_right_bracket) => {
+                            match Self::parse_helper(&tokens[idx_right_bracket + 1..]) {
+                                Err((idx_err, err_msg)) => {
+                                    Err((idx_err + idx_right_bracket + 1, err_msg))
+                                }
+                                Ok(mut sub_attr_list) => {
+                                    match AListImpl::parse_from(&tokens[1..idx_right_bracket]) {
+                                        Err(_) => Err((1, &"internal error")),
+                                        Ok(a_list) => {
+                                            sub_attr_list.push(a_list);
+                                            Ok(sub_attr_list)
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
+                    },
+                    _ => Err((0, &"expecting '['")),
                 }
+            }
+        }
+
+        match Internal::parse_helper(tokens) {
+            Err(err_info) => Err(err_info),
+            Ok(result) => match result.len() {
+                0 => Err((0, &"expecting valid AttrList here")),
+                _ => Ok(result),
             },
-            _ => Err(()),
         }
     }
 }
@@ -291,14 +307,11 @@ impl<'a> AttrStmt<'a> {
         let parse_helper =
             |attr_key: AttrStmtKey, tokens: &[&'a str]| -> Result<AttrStmt<'a>, (usize, &'a str)> {
                 match AttrListImpl::parse_from(&tokens[1..]) {
-                    Err(err_msg) => Err((1, &"error parsing AttrList")),
-                    Ok(attr_list) => match attr_list.len() {
-                        0 => Err((1, &"require at least one AttrList for AttrStmt")),
-                        _ => Ok(AttrStmt {
-                            key: attr_key,
-                            attr_list: attr_list,
-                        }),
-                    },
+                    Err((idx_err, err_msg)) => Err((idx_err + 1, err_msg)),
+                    Ok(attr_list) => Ok(AttrStmt {
+                        key: attr_key,
+                        attr_list: attr_list,
+                    }),
                 }
             };
 
@@ -460,20 +473,37 @@ mod tests {
     #[test]
     fn parse_attrlist() {
         {
-            let attr_list = AttrListImpl::parse_from(&[]).unwrap();
-            assert!(attr_list.is_empty());
+            match AttrListImpl::parse_from(&[]) {
+                Err((idx_err, err_msg)) => {
+                    assert_eq!(idx_err, 0, "{}", err_msg);
+                }
+                Ok(_) => {
+                    assert!(false, "cannot be empty");
+                }
+            }
         }
 
         {
-            let attr_list = AttrListImpl::parse_from(&["[", "id1", "=", "value1", "]"]).unwrap();
-            assert_eq!(attr_list.len(), 1);
-            assert!(alist_entry_match(&attr_list[0], "id1", "value1"));
+            match AttrListImpl::parse_from(&["[", "id1", "=", "value1", "]"]) {
+                Err((idx_err, err_msg)) => {
+                    assert!(false, "error at index {}: {}", idx_err, err_msg);
+                }
+                Ok(attr_list) => {
+                    assert_eq!(attr_list.len(), 1);
+                    assert!(alist_entry_match(&attr_list[0], "id1", "value1"));
+                }
+            }
         }
 
         {
-            let attr_list =
-                AttrListImpl::parse_from(&["[", "]", "[", "id1", "=", "value1", "]"]).unwrap();
-            assert_eq!(attr_list.len(), 2);
+            match AttrListImpl::parse_from(&["[", "]", "[", "id1", "=", "value1", "]"]) {
+                Err((idx_err, err_msg)) => {
+                    assert!(false, "error at index {}: {}", idx_err, err_msg);
+                }
+                Ok(attr_list) => {
+                    assert_eq!(attr_list.len(), 2);
+                }
+            }
         }
 
         {
