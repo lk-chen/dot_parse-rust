@@ -59,7 +59,17 @@ pub struct Stmt<'a> {
     key_value: (dot::Id<'a>, dot::Id<'a>),
 }
 
-type StmtList<'a> = Vec<Stmt<'a>>;
+type StmtListImpl<'a> = Vec<Stmt<'a>>;
+
+trait StmtList {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<StmtListImpl<'a>, (usize, &'a str)>;
+}
+
+impl StmtList for StmtListImpl<'_> {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<StmtListImpl<'a>, (usize, &'a str)> {
+        Err((0, "no impl"))
+    }
+}
 
 #[derive(Default)]
 pub struct Port<'a> {
@@ -357,7 +367,43 @@ impl<'a> NodeStmt<'a> {
 
 pub struct SubGraph<'a> {
     id: Option<dot::Id<'a>>,
-    stmt_list: StmtList<'a>,
+    stmt_list: StmtListImpl<'a>,
+}
+
+impl<'a> SubGraph<'a> {
+    fn parse_from(tokens: &[&'a str]) -> Result<SubGraph<'a>, (usize, &'a str)> {
+        let parse_stmt_list_and_return = |id: Option<dot::Id<'a>>,
+                                          id_stmt_start: usize|
+         -> Result<SubGraph<'a>, (usize, &'a str)> {
+            match StmtListImpl::parse_from(&tokens[id_stmt_start..tokens.len() - 1]) {
+                Err((idx_err, err_msg)) => Err((idx_err + id_stmt_start, err_msg)),
+                Ok(stmt_list) => Ok(SubGraph {
+                    id: id,
+                    stmt_list: stmt_list,
+                }),
+            }
+        };
+
+        let key_subgraph: &str = "subgraph";
+        let right_brace: &str = "}";
+        match (tokens.iter().position(|x| x == &"{"), tokens.last()) {
+            (Some(idx_left_brace), Some(&right_brace)) => match idx_left_brace {
+                0 => parse_stmt_list_and_return(None, 1),
+                1 => match tokens[0] {
+                    key_subgraph => parse_stmt_list_and_return(None, 2),
+                    _ => Err((0, "expecting subgraph")),
+                },
+                2 => match (tokens[0], dot::Id::new(tokens[1])) {
+                    (_, Err(_)) => Err((1, "expecting valid id")),
+                    (key_subgraph, Ok(id)) => parse_stmt_list_and_return(Some(id), 3),
+                    (_, Ok(_)) => Err((0, "expecting subgraph")),
+                },
+                _ => Err((idx_left_brace, "wrong grammer")),
+            },
+            (None, _) => Err((0, "expecting '{'")),
+            (_, None) => Err((tokens.len(), "expecting '}'")),
+        }
+    }
 }
 
 pub struct EdgeRhs<'a> {
@@ -377,7 +423,7 @@ pub struct Graph<'a> {
     strict: bool,
     kind: dot::Kind,
     id: Option<dot::Id<'a>>,
-    stmt_list: StmtList<'a>,
+    stmt_list: StmtListImpl<'a>,
 }
 
 #[cfg(test)]
