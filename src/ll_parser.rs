@@ -67,7 +67,10 @@ trait StmtList {
 
 impl StmtList for StmtListImpl<'_> {
     fn parse_from<'a>(tokens: &[&'a str]) -> Result<StmtListImpl<'a>, (usize, &'a str)> {
-        Err((0, "no impl"))
+        match tokens.len() {
+            0 => Ok(StmtListImpl::new()),
+            _ => Err((0, "no impl")),
+        }
     }
 }
 
@@ -625,6 +628,75 @@ mod tests {
             let tokens: Vec<&str> = "other_keyword []".split_whitespace().collect();
             let node_stmt = AttrStmt::parse_from(tokens.as_slice());
             assert!(!node_stmt.is_ok(), node_stmt.unwrap());
+        }
+    }
+
+    #[test]
+    fn parse_subgraph() {
+        {
+            let tokens: Vec<&str> = "{ }".split_whitespace().collect();
+            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            match maybe_subgraph {
+                Ok(subgraph) => {
+                    assert!(subgraph.id.is_none());
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "subgraph { }".split_whitespace().collect();
+            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            match maybe_subgraph {
+                Ok(subgraph) => {
+                    assert!(subgraph.id.is_none());
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "subgraph id1 { }".split_whitespace().collect();
+            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            match maybe_subgraph {
+                Ok(subgraph) => {
+                    assert!(subgraph.id.is_some());
+                    assert_eq!(subgraph.id.unwrap().name(), "id1");
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "subgraph [ ]".split_whitespace().collect();
+            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            match maybe_subgraph {
+                Ok(subgraph) => {
+                    assert!(false, subgraph);
+                }
+                Err((idx_err, _)) => {
+                    assert_eq!(idx_err, 0);
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "wrong_keyword [ ]".split_whitespace().collect();
+            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            match maybe_subgraph {
+                Ok(subgraph) => {
+                    assert!(false, subgraph);
+                }
+                Err((idx_err, _)) => {
+                    assert_eq!(idx_err, 0);
+                }
+            };
         }
     }
 }
