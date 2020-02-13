@@ -172,24 +172,26 @@ pub struct NodeId<'a> {
 }
 
 impl<'a> NodeId<'a> {
-    fn parse_from(tokens: &[&'a str]) -> Result<NodeId<'a>, ()> {
-        fn parse_option_port_from<'b>(tokens: &[&'b str]) -> Result<Option<Port<'b>>, ()> {
+    fn parse_from(tokens: &[&'a str]) -> Result<NodeId<'a>, ((usize, &'a str))> {
+        fn parse_option_port_from<'b>(
+            tokens: &[&'b str],
+        ) -> Result<Option<Port<'b>>, (usize, &'b str)> {
             if tokens.len() == 0 {
                 return Ok(None);
             }
             match Port::parse_from(tokens) {
                 Ok(port) => Ok(Some(port)),
-                Err(_) => Err(()),
+                Err(_) => Err((0, "error parsing port")),
             }
         };
 
         if tokens.len() == 0 {
-            return Err(());
+            return Err((0, "expecting node id"));
         }
         match dot::Id::new(tokens[0]) {
-            Err(_) => Err(()),
+            Err(_) => Err((0, "cannot be used as id")),
             Ok(id) => match parse_option_port_from(&tokens[1..]) {
-                Err(_) => Err(()),
+                Err((idx_err, err_msg)) => Err((idx_err + 1, err_msg)),
                 Ok(port) => Ok(NodeId { id: id, port: port }),
             },
         }
@@ -343,10 +345,10 @@ pub struct NodeStmt<'a> {
 }
 
 impl<'a> NodeStmt<'a> {
-    fn parse_from(tokens: &[&'a str]) -> Result<NodeStmt<'a>, ()> {
+    fn parse_from(tokens: &[&'a str]) -> Result<NodeStmt<'a>, (usize, &'a str)> {
         match tokens.iter().position(|x| x == &"[") {
             None => match NodeId::parse_from(tokens) {
-                Err(err_msg) => Err(err_msg),
+                Err(err_info) => Err(err_info),
                 Ok(node_id) => Ok(NodeStmt {
                     id: node_id,
                     attr_list: None,
@@ -361,7 +363,8 @@ impl<'a> NodeStmt<'a> {
                         id: node_id,
                         attr_list: Some(attr_list),
                     }),
-                    _ => Err(()),
+                    (Err(err_info), _) => Err(err_info),
+                    (Ok(_), Err((idx_err, err_msg))) => Err((idx_err + idx_left_bracket, err_msg)),
                 }
             }
         }
