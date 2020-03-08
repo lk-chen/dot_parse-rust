@@ -67,6 +67,7 @@ trait StmtList {
 
 impl StmtList for StmtListImpl<'_> {
     fn parse_from<'a>(tokens: &[&'a str]) -> Result<StmtListImpl<'a>, (usize, &'a str)> {
+        // TODO: finish.
         match tokens.len() {
             0 => Ok(StmtListImpl::new()),
             _ => Err((0, "no impl")),
@@ -412,6 +413,27 @@ impl<'a> SubGraph<'a> {
     }
 }
 
+type NodeOrSubgraph<'b> = (Option<NodeId<'b>>, Option<SubGraph<'b>>, (usize, &'b str));
+
+fn parse_node_or_subgraph<'a>(tokens_n_s: &[&'a str]) -> NodeOrSubgraph<'a> {
+    match (
+        NodeId::parse_from(tokens_n_s),
+        SubGraph::parse_from(tokens_n_s),
+    ) {
+        (Ok(node_id), _) => (Some(node_id), None, (0, "")),
+        (_, Ok(subgraph)) => (None, Some(subgraph), (0, "")),
+        (Err((idx_err_node, err_msg_node)), Err((idx_err_subg, err_msg_subg))) => {
+            // If we move more forward when parsing node, guess it's a node.
+            // println!("")
+            if idx_err_node >= idx_err_subg {
+                (None, None, (idx_err_node, err_msg_node))
+            } else {
+                (None, None, (idx_err_subg, err_msg_subg))
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct EdgeRhs<'a> {
     // It stores a sequence of node_id or subgraph.
@@ -425,27 +447,6 @@ impl<'a> EdgeRhs<'a> {
             edgeop: &'b str,
             tokens_internal: &[&'b str],
         ) -> Result<EdgeRhs<'b>, (usize, &'b str)> {
-            type NodeOrSubgraph<'b> = (Option<NodeId<'b>>, Option<SubGraph<'b>>, (usize, &'b str));
-
-            let parse_node_or_subgraph = |tokens_n_s: &[&'b str]| -> NodeOrSubgraph<'b> {
-                match (
-                    NodeId::parse_from(tokens_n_s),
-                    SubGraph::parse_from(tokens_n_s),
-                ) {
-                    (Ok(node_id), _) => (Some(node_id), None, (0, "")),
-                    (_, Ok(subgraph)) => (None, Some(subgraph), (0, "")),
-                    (Err((idx_err_node, err_msg_node)), Err((idx_err_subg, err_msg_subg))) => {
-                        // If we move more forward when parsing node, guess it's a node.
-                        // println!("")
-                        if idx_err_node >= idx_err_subg {
-                            (None, None, (idx_err_node, err_msg_node))
-                        } else {
-                            (None, None, (idx_err_subg, err_msg_subg))
-                        }
-                    }
-                }
-            };
-
             let merge_and_return = |node_or_subgraph: NodeOrSubgraph<'b>,
                                     idx_res_tokens_start: usize,
                                     res_tokens: &[&'b str]|
@@ -491,9 +492,9 @@ impl<'a> EdgeRhs<'a> {
                             &tokens_internal[0..0],
                         ),
                         (Some(0), Some(idx_next_edgeop)) => merge_and_return(
-                            parse_node_or_subgraph(&tokens_internal[1..idx_next_edgeop+1]),
+                            parse_node_or_subgraph(&tokens_internal[1..idx_next_edgeop + 1]),
                             idx_next_edgeop,
-                            &tokens_internal[idx_next_edgeop+1..],
+                            &tokens_internal[idx_next_edgeop + 1..],
                         ),
                         (_, _) => Err((0, "edgeRHS should begin with edgeop")),
                     }
@@ -510,10 +511,63 @@ impl<'a> EdgeRhs<'a> {
 }
 
 pub struct EdgeStmt<'a> {
-    node_id: Option<NodeId<'a>>,
-    subgraph: Option<SubGraph<'a>>,
-    rhs: Vec<EdgeRhs<'a>>,
+    // It stores a sequence of node_id or subgraph.
+    node_id_or_subgraph: Vec<(Option<NodeId<'a>>, Option<SubGraph<'a>>)>,
     attr_list: Option<AttrListImpl<'a>>,
+}
+
+impl<'a> EdgeStmt<'a> {
+    fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<EdgeStmt<'a>, (usize, &'a str)> {
+        let parse_edge = |idx_edge_rhs: usize,
+                          tokens_internal: &[&'a str]|
+         -> Result<EdgeStmt<'a>, (usize, &'a str)> {
+            match (
+                parse_node_or_subgraph(&tokens_internal[0..idx_edge_rhs]),
+                EdgeRhs::parse_from(edgeop, &tokens_internal[idx_edge_rhs..]),
+            ) {
+                ((None, None, (idx_err, err_msg)), _) => Err((idx_err, err_msg)),
+                (_, Err((idx_err, err_msg))) => Err((idx_err + idx_edge_rhs, err_msg)),
+                ((Some(_), Some(_), _), _) => panic!("Shouldn't happen"),
+                ((opt_node, opt_subgraph, _), Ok(mut edge_rhs)) => {
+                    edge_rhs
+                        .node_id_or_subgraph
+                        .insert(0, (opt_node, opt_subgraph));
+                    Ok(EdgeStmt {
+                        node_id_or_subgraph: edge_rhs.node_id_or_subgraph,
+                        attr_list: None,
+                    })
+                }
+            }
+        };
+
+        match (
+            tokens.iter().position(|x| x == &edgeop),
+            tokens.iter().position(|x| x == &"["),
+        ) {
+            (Some(idx_edge_rhs), Some(idx_attr_list)) => {
+                if idx_attr_list <= idx_edge_rhs {
+                    return Err((
+                        idx_attr_list,
+                        "Attr list should be at the end of statement.",
+                    ));
+                }
+                match (
+                    parse_edge(idx_edge_rhs, &tokens[0..idx_attr_list]),
+                    AttrListImpl::parse_from(&tokens[idx_attr_list..]),
+                ) {
+                    (Err(err_info), _) => Err(err_info),
+                    (_, Err((idx_err, err_msg))) => Err((idx_err + idx_attr_list, err_msg)),
+                    (Ok(mut edge), Ok(mut attr_list)) => Ok(EdgeStmt {
+                        node_id_or_subgraph: edge.node_id_or_subgraph,
+                        attr_list: Some(attr_list),
+                    }),
+                }
+            }
+            (Some(idx_edge_rhs), None) => parse_edge(idx_edge_rhs, &tokens[0..]),
+            (None, Some(idx_attr_list)) => Err((idx_attr_list, "Expect edgeop")),
+            (None, None) => Err((tokens.len(), "Expect edgeop")),
+        }
+    }
 }
 
 pub struct Graph<'a> {
@@ -823,5 +877,7 @@ mod tests {
                 }
             };
         }
+
+        // TODO: add test for subgraph.
     }
 }
