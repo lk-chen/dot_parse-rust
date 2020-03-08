@@ -172,6 +172,23 @@ pub struct NodeId<'a> {
     port: Option<Port<'a>>,
 }
 
+impl fmt::Debug for NodeId<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "NodeId{{id={:?}, port={:?}}}",
+            self.id.as_slice(),
+            self.port
+        )
+    }
+}
+
+impl PartialEq for NodeId<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.as_slice() == other.id.as_slice() && self.port == other.port
+    }
+}
+
 impl<'a> NodeId<'a> {
     fn parse_from(tokens: &[&'a str]) -> Result<NodeId<'a>, ((usize, &'a str))> {
         fn parse_option_port_from<'b>(
@@ -557,7 +574,7 @@ impl<'a> EdgeStmt<'a> {
                 ) {
                     (Err(err_info), _) => Err(err_info),
                     (_, Err((idx_err, err_msg))) => Err((idx_err + idx_attr_list, err_msg)),
-                    (Ok(mut edge), Ok(mut attr_list)) => Ok(EdgeStmt {
+                    (Ok(edge), Ok(attr_list)) => Ok(EdgeStmt {
                         node_id_or_subgraph: edge.node_id_or_subgraph,
                         attr_list: Some(attr_list),
                     }),
@@ -879,5 +896,49 @@ mod tests {
         }
 
         // TODO: add test for subgraph.
+    }
+
+    #[test]
+    fn parse_edge_stmt() {
+        {
+            let tokens: Vec<&str> = "id1 -- id2 -- id3 : id4 : n".split_whitespace().collect();
+            let maybe_edge = EdgeStmt::parse_from("--", tokens.as_slice());
+            match maybe_edge {
+                Ok(edge) => {
+                    assert!(edge.node_id_or_subgraph.len() == 3);
+                    assert!(edge.node_id_or_subgraph[2].1.is_none());
+                    assert_eq!(
+                        edge.node_id_or_subgraph[2].0,
+                        Some(NodeId {
+                            id: dot::Id::new("id3").unwrap(),
+                            port: Some(Port {
+                                id: Some(::dot::Id::new("id4").unwrap()),
+                                compass_pt: Some(CompassPt::C)
+                            })
+                        })
+                    );
+                    assert!(edge.attr_list.is_none());
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "id1 -> id2 [ ]".split_whitespace().collect();
+            let maybe_edge = EdgeStmt::parse_from("->", tokens.as_slice());
+            match maybe_edge {
+                Ok(edge) => {
+                    assert!(edge.node_id_or_subgraph.len() == 2);
+                    assert!(edge.attr_list.is_some());
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        // TODO: test subgraph
     }
 }
