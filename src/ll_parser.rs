@@ -412,6 +412,7 @@ impl<'a> SubGraph<'a> {
     }
 }
 
+#[derive(Default)]
 pub struct EdgeRhs<'a> {
     // It stores a sequence of node_id or subgraph.
     node_id_or_subgraph: Vec<(Option<NodeId<'a>>, Option<SubGraph<'a>>)>,
@@ -419,13 +420,23 @@ pub struct EdgeRhs<'a> {
 
 impl<'a> EdgeRhs<'a> {
     fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<EdgeRhs<'a>, (usize, &'a str)> {
-        let parse_node_or_subgraph =
-            |tokens: &[&'a str]| -> (Option<NodeId<'a>>, Option<SubGraph<'a>>, (usize, &'a str)) {
-                match (NodeId::parse_from(tokens), SubGraph::parse_from(tokens)) {
+        // Helper function for recursive call.
+        fn parse_internal<'b>(
+            edgeop: &'b str,
+            tokens_internal: &[&'b str],
+        ) -> Result<EdgeRhs<'b>, (usize, &'b str)> {
+            type NodeOrSubgraph<'b> = (Option<NodeId<'b>>, Option<SubGraph<'b>>, (usize, &'b str));
+
+            let parse_node_or_subgraph = |tokens_n_s: &[&'b str]| -> NodeOrSubgraph<'b> {
+                match (
+                    NodeId::parse_from(tokens_n_s),
+                    SubGraph::parse_from(tokens_n_s),
+                ) {
                     (Ok(node_id), _) => (Some(node_id), None, (0, "")),
                     (_, Ok(subgraph)) => (None, Some(subgraph), (0, "")),
                     (Err((idx_err_node, err_msg_node)), Err((idx_err_subg, err_msg_subg))) => {
                         // If we move more forward when parsing node, guess it's a node.
+                        // println!("")
                         if idx_err_node >= idx_err_subg {
                             (None, None, (idx_err_node, err_msg_node))
                         } else {
@@ -435,53 +446,64 @@ impl<'a> EdgeRhs<'a> {
                 }
             };
 
-        let merge_and_return =
-            |node_or_subgraph: (Option<NodeId<'a>>, Option<SubGraph<'a>>, (usize, &'a str)),
-             idx_res_tokens_start: usize,
-             res_tokens: &[&'a str]|
-             -> Result<EdgeRhs<'a>, (usize, &'a str)> {
+            let merge_and_return = |node_or_subgraph: NodeOrSubgraph<'b>,
+                                    idx_res_tokens_start: usize,
+                                    res_tokens: &[&'b str]|
+             -> Result<EdgeRhs<'b>, (usize, &'b str)> {
                 match node_or_subgraph {
                     (None, None, (idx_err, err_msg)) => Err((idx_err, err_msg)),
-                    (Some(node_id), None, _) => {
-                        match EdgeRhs::parse_from(edgeop, res_tokens) {
-                            Err((idx_sub_err, sub_err_msg)) => Err((idx_sub_err + idx_res_tokens_start, sub_err_msg)),
-                            Ok(mut sub_rhs) => {
-                                sub_rhs.node_id_or_subgraph.insert(0, (Some(node_id), None));
-                                Ok(sub_rhs)
-                            }
+                    (Some(node_id), None, _) => match parse_internal(edgeop, res_tokens) {
+                        Err((idx_sub_err, sub_err_msg)) => {
+                            Err((idx_sub_err + idx_res_tokens_start, sub_err_msg))
+                        }
+                        Ok(mut sub_rhs) => {
+                            sub_rhs.node_id_or_subgraph.insert(0, (Some(node_id), None));
+                            Ok(sub_rhs)
                         }
                     },
-                    (None, Some(subgraph), _) => {
-                        match EdgeRhs::parse_from(edgeop, res_tokens) {
-                            Err((idx_sub_err, sub_err_msg)) => Err((idx_sub_err + idx_res_tokens_start, sub_err_msg)),
-                            Ok(mut sub_rhs) => {
-                                sub_rhs.node_id_or_subgraph.insert(0, (None, Some(subgraph)));
-                                Ok(sub_rhs)
-                            }
+                    (None, Some(subgraph), _) => match parse_internal(edgeop, res_tokens) {
+                        Err((idx_sub_err, sub_err_msg)) => {
+                            Err((idx_sub_err + idx_res_tokens_start, sub_err_msg))
+                        }
+                        Ok(mut sub_rhs) => {
+                            sub_rhs
+                                .node_id_or_subgraph
+                                .insert(0, (None, Some(subgraph)));
+                            Ok(sub_rhs)
                         }
                     },
-                    (Some(_), Some(_), _) => {
-                        panic!("Should never happen")
+                    (Some(_), Some(_), _) => panic!("Should never happen"),
+                }
+            };
+
+            match tokens_internal.len() {
+                0 => Ok(EdgeRhs {
+                    ..Default::default()
+                }),
+                _ => {
+                    match (
+                        tokens_internal.iter().position(|x| x == &edgeop),
+                        tokens_internal[1..].iter().position(|x| x == &edgeop),
+                    ) {
+                        (Some(0), None) => merge_and_return(
+                            parse_node_or_subgraph(&tokens_internal[1..]),
+                            tokens_internal.len(),
+                            &tokens_internal[0..0],
+                        ),
+                        (Some(0), Some(idx_next_edgeop)) => merge_and_return(
+                            parse_node_or_subgraph(&tokens_internal[1..idx_next_edgeop+1]),
+                            idx_next_edgeop,
+                            &tokens_internal[idx_next_edgeop+1..],
+                        ),
+                        (_, _) => Err((0, "edgeRHS should begin with edgeop")),
                     }
                 }
-             };
+            }
+        };
 
         match (tokens.len(), edgeop) {
             (0, _) => Err((0, "edgeRHS expects non-empty token list")),
-            (_, "->") | (_, "--") => {
-                match (
-                    tokens.iter().position(|x| x == &edgeop),
-                    tokens[1..].iter().position(|x| x == &edgeop),
-                ) {
-                    (Some(0), None) => {
-                        merge_and_return(parse_node_or_subgraph(&tokens[1..]), tokens.len(), &tokens[0..0])
-                    },
-                    (Some(0), Some(idx_next_edgeop)) => {
-                        merge_and_return(parse_node_or_subgraph(&tokens[1..idx_next_edgeop]), idx_next_edgeop, &tokens[idx_next_edgeop..])
-                    }
-                    (_, _) => Err((0, "edgeRHS should begin with edgeop")),
-                }
-            }
+            (_, "->") | (_, "--") => parse_internal(edgeop, tokens),
             _ => Err((0, "edgeop should be '->'|'--'")),
         }
     }
@@ -767,6 +789,37 @@ mod tests {
                 }
                 Err((idx_err, _)) => {
                     assert_eq!(idx_err, 0);
+                }
+            };
+        }
+    }
+
+    #[test]
+    fn parse_edge_rhs() {
+        {
+            let tokens: Vec<&str> = "-- id1".split_whitespace().collect();
+            let maybe_edge_rhs = EdgeRhs::parse_from("--", tokens.as_slice());
+            match maybe_edge_rhs {
+                Ok(edge_rhs) => {
+                    assert!(edge_rhs.node_id_or_subgraph.len() == 1);
+                    assert!(edge_rhs.node_id_or_subgraph[0].1.is_none());
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "-> id1 -> id2 : id3 : n".split_whitespace().collect();
+            let maybe_edge_rhs = EdgeRhs::parse_from("->", tokens.as_slice());
+            match maybe_edge_rhs {
+                Ok(edge_rhs) => {
+                    assert!(edge_rhs.node_id_or_subgraph.len() == 2);
+                    assert!(edge_rhs.node_id_or_subgraph[0].1.is_none());
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
                 }
             };
         }
