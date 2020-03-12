@@ -51,12 +51,48 @@ impl fmt::Debug for CompassPt {
     }
 }
 
+#[derive(Default)]
 pub struct Stmt<'a> {
     node_stmt: Option<NodeStmt<'a>>,
     edge_stmt: Option<EdgeStmt<'a>>,
     attr_stmt: Option<AttrStmt<'a>>,
     subgraph: Option<SubGraph<'a>>,
-    key_value: (dot::Id<'a>, dot::Id<'a>),
+    // key_value: (dot::Id<'a>, dot::Id<'a>),
+}
+
+impl<'a> Stmt<'a> {
+    fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<Stmt<'a>, (usize, &'a str)> {
+        fn try_node_stmt<'b>(tokens_internal: &[&'b str],
+                             idx_err: &mut usize,
+                             err_msg: &mut String)
+         -> Option<NodeStmt<'b>> {
+            match NodeStmt::parse_from(tokens_internal) {
+                Err((idx_err_node, err_msg_node)) => {
+                    if idx_err_node < *idx_err {
+                        *idx_err = idx_err_node;
+                        *err_msg = err_msg_node.to_string();
+                    }
+                    None
+                }
+                Ok(node) => {
+                    Some(node)
+                }
+            }
+        };
+
+        let mut result = Stmt {
+            ..Default::default()
+        };
+        let mut idx_err: usize = tokens.len();
+        let mut err_msg = String::new();
+
+        if let Some(node_stmt) = try_node_stmt(&tokens, &mut idx_err, &mut err_msg) {
+            result.node_stmt = Some(node_stmt);
+            Ok(result)
+        } else {
+            Err((0, ""))
+        }
+    }
 }
 
 type StmtListImpl<'a> = Vec<Stmt<'a>>;
@@ -940,5 +976,16 @@ mod tests {
         }
 
         // TODO: test subgraph
+    }
+
+    #[test]
+    fn ddd() {
+        fn foo(a: &mut &str) {
+            *a = "foo";
+        }
+        let mut b: &str = "bar";
+        assert_eq!(b, "bar");
+        foo(&mut b);
+        assert_eq!(b, "foo");
     }
 }
