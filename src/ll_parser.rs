@@ -91,13 +91,21 @@ impl<'a> Stmt<'a> {
         let mut idx_err: usize = tokens.len();
         let mut err_msg = String::new();
 
-        if let Some(node_stmt) = try_different_stmt::<NodeStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg) {
+        if let Some(node_stmt) =
+            try_different_stmt::<NodeStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg)
+        {
             result.node_stmt = Some(node_stmt);
+            print!("{}", node_stmt);
             Ok(result)
         } else if let Some(edge_stmt) =
             try_different_stmt::<EdgeStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg)
         {
             result.edge_stmt = Some(edge_stmt);
+            Ok(result)
+        } else if let Some(attr_stmt) =
+            try_different_stmt::<AttrStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg)
+        {
+            result.attr_stmt = Some(attr_stmt);
             Ok(result)
         } else {
             Err((0, ""))
@@ -262,17 +270,23 @@ impl<'a> NodeId<'a> {
     }
 }
 
-// define AListImpl so it's easy to change to another impl.
-type AListImpl<'a> = HashMap<std::borrow::Cow<'a, str>, dot::Id<'a>>;
+struct AList<'a>(HashMap<std::borrow::Cow<'a, str>, dot::Id<'a>>);
 
-trait AList {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AListImpl<'a>, ()>;
+impl<'a> fmt::Debug for AList<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            AttrStmtKey::GRAPH => "GRAPH",
+            AttrStmtKey::NODE => "NODE",
+            AttrStmtKey::EDGE => "EDGE",
+        };
+        write!(f, "{:?}", s)
+    }
 }
 
-impl AList for AListImpl<'_> {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AListImpl<'a>, ()> {
-        fn parse_helper<'b>(tokens: &[&'b str], slice_idx: usize) -> Result<AListImpl<'b>, ()> {
-            match AListImpl::parse_from(&tokens[slice_idx..]) {
+impl AList<'_> {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AList<'a>, ()> {
+        fn parse_helper<'b>(tokens: &[&'b str], slice_idx: usize) -> Result<AList<'b>, ()> {
+            match AList::parse_from(&tokens[slice_idx..]) {
                 Err(err_msg) => Err(err_msg),
                 Ok(mut sub_list) => {
                     if tokens[1] != "=" {
@@ -281,7 +295,7 @@ impl AList for AListImpl<'_> {
                         match dot::Id::new(tokens[2]) {
                             Err(_) => Err(()),
                             Ok(id) => {
-                                sub_list.insert(std::borrow::Cow::Borrowed(tokens[0]), id);
+                                sub_list.0.insert(std::borrow::Cow::Borrowed(tokens[0]), id);
                                 Ok(sub_list)
                             }
                         }
@@ -291,7 +305,7 @@ impl AList for AListImpl<'_> {
         };
 
         match tokens.len() {
-            0 => Ok(HashMap::new()),
+            0 => Ok(AList(HashMap::new())),
             // exclusive range is experimental
             1 => Err(()),
             2 => Err(()),
@@ -305,20 +319,27 @@ impl AList for AListImpl<'_> {
     }
 }
 
-type AttrListImpl<'a> = Vec<AListImpl<'a>>;
+struct AttrList<'a>(Vec<AList<'a>>);
 
-trait AttrList {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, (usize, &'a str)>;
+impl<'a> fmt::Debug for AttrList<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            AttrStmtKey::GRAPH => "GRAPH",
+            AttrStmtKey::NODE => "NODE",
+            AttrStmtKey::EDGE => "EDGE",
+        };
+        write!(f, "{:?}", s)
+    }
 }
 
-impl AttrList for AttrListImpl<'_> {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, (usize, &'a str)> {
+impl AttrList<'_> {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrList<'a>, (usize, &'a str)> {
         // Recursive closure not allowed.
         struct Internal {}
         impl Internal {
-            fn parse_helper<'b>(tokens: &[&'b str]) -> Result<AttrListImpl<'b>, (usize, &'b str)> {
+            fn parse_helper<'b>(tokens: &[&'b str]) -> Result<AttrList<'b>, (usize, &'b str)> {
                 match tokens.first() {
-                    None => Ok(AttrListImpl::new()),
+                    None => Ok(AttrList(vec!())),
                     Some(&"[") => match tokens.iter().position(|x| x == &"]") {
                         None => Err((tokens.len(), &"expecting ']'")),
                         Some(idx_right_bracket) => {
@@ -327,10 +348,10 @@ impl AttrList for AttrListImpl<'_> {
                                     Err((idx_err + idx_right_bracket + 1, err_msg))
                                 }
                                 Ok(mut sub_attr_list) => {
-                                    match AListImpl::parse_from(&tokens[1..idx_right_bracket]) {
+                                    match AList::parse_from(&tokens[1..idx_right_bracket]) {
                                         Err(_) => Err((1, &"internal error")),
                                         Ok(a_list) => {
-                                            sub_attr_list.push(a_list);
+                                            sub_attr_list.0.push(a_list);
                                             Ok(sub_attr_list)
                                         }
                                     }
@@ -345,7 +366,7 @@ impl AttrList for AttrListImpl<'_> {
 
         match Internal::parse_helper(tokens) {
             Err(err_info) => Err(err_info),
-            Ok(result) => match result.len() {
+            Ok(result) => match result.0.len() {
                 0 => Err((0, &"expecting valid AttrList here")),
                 _ => Ok(result),
             },
@@ -378,14 +399,16 @@ impl fmt::Debug for AttrStmtKey {
 
 pub struct AttrStmt<'a> {
     key: AttrStmtKey,
-    attr_list: AttrListImpl<'a>,
+    attr_list: AttrList<'a>,
 }
 
-impl<'a> AttrStmt<'a> {
-    fn parse_from(tokens: &[&'a str]) -> Result<AttrStmt<'a>, (usize, &'a str)> {
+impl<'a> Parsable<'a> for AttrStmt<'a> {
+    type Output = AttrStmt<'a>;
+    // |edgeop| is ignored.
+    fn parse_from(_edgeop: &'a str, tokens: &[&'a str]) -> Result<Self::Output, (usize, &'a str)> {
         let parse_helper =
             |attr_key: AttrStmtKey, tokens: &[&'a str]| -> Result<AttrStmt<'a>, (usize, &'a str)> {
-                match AttrListImpl::parse_from(&tokens[1..]) {
+                match AttrList::parse_from(&tokens[1..]) {
                     Err((idx_err, err_msg)) => Err((idx_err + 1, err_msg)),
                     Ok(attr_list) => Ok(AttrStmt {
                         key: attr_key,
@@ -405,7 +428,17 @@ impl<'a> AttrStmt<'a> {
 
 pub struct NodeStmt<'a> {
     id: NodeId<'a>,
-    attr_list: Option<AttrListImpl<'a>>,
+    attr_list: Option<AttrList<'a>>,
+}
+
+impl<'a> fmt::Debug for NodeStmt<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self.attr_list {
+            None => format!("NodeStmt{{id={:?}}}", self.id),
+            Some(attr_list) => format!("NodeStmt{{id={:?}, attr_list={:?}}}", self.id, attr_list),
+        };
+        write!(f, "{:?}", s)
+    }
 }
 
 impl<'a> Parsable<'a> for NodeStmt<'a> {
@@ -423,7 +456,7 @@ impl<'a> Parsable<'a> for NodeStmt<'a> {
             Some(idx_left_bracket) => {
                 match (
                     NodeId::parse_from(&tokens[..idx_left_bracket]),
-                    AttrListImpl::parse_from(&tokens[idx_left_bracket..]),
+                    AttrList::parse_from(&tokens[idx_left_bracket..]),
                 ) {
                     (Ok(node_id), Ok(attr_list)) => Ok(NodeStmt {
                         id: node_id,
@@ -578,7 +611,7 @@ impl<'a> EdgeRhs<'a> {
 pub struct EdgeStmt<'a> {
     // It stores a sequence of node_id or subgraph.
     node_id_or_subgraph: Vec<(Option<NodeId<'a>>, Option<SubGraph<'a>>)>,
-    attr_list: Option<AttrListImpl<'a>>,
+    attr_list: Option<AttrList<'a>>,
 }
 
 impl<'a> Parsable<'a> for EdgeStmt<'a> {
@@ -619,7 +652,7 @@ impl<'a> Parsable<'a> for EdgeStmt<'a> {
                 }
                 match (
                     parse_edge(idx_edge_rhs, &tokens[0..idx_attr_list]),
-                    AttrListImpl::parse_from(&tokens[idx_attr_list..]),
+                    AttrList::parse_from(&tokens[idx_attr_list..]),
                 ) {
                     (Err(err_info), _) => Err(err_info),
                     (_, Err((idx_err, err_msg))) => Err((idx_err + idx_attr_list, err_msg)),
@@ -697,7 +730,7 @@ mod tests {
     }
 
     // Helper function to check if (key, value) exists in |alist|.
-    fn alist_entry_match(alist: &AListImpl, key: &str, value: &str) -> bool {
+    fn alist_entry_match(alist: &AList, key: &str, value: &str) -> bool {
         alist
             .get(std::borrow::Borrow::borrow(key))
             .unwrap()
@@ -707,36 +740,36 @@ mod tests {
 
     #[test]
     fn parse_alist() {
-        let alist_1 = AListImpl::parse_from(&[]).unwrap();
+        let alist_1 = AList::parse_from(&[]).unwrap();
         assert_eq!(alist_1.len(), 0);
 
-        let alist_2 = AListImpl::parse_from(&["id1", "=", "value1"]).unwrap();
+        let alist_2 = AList::parse_from(&["id1", "=", "value1"]).unwrap();
         assert_eq!(alist_2.len(), 1);
         assert!(alist_entry_match(&alist_2, "id1", "value1"));
 
         let alist_3 =
-            AListImpl::parse_from(&["id1", "=", "value1", ";", "id2", "=", "value2"]).unwrap();
+            AList::parse_from(&["id1", "=", "value1", ";", "id2", "=", "value2"]).unwrap();
         assert_eq!(alist_3.len(), 2);
         assert!(alist_entry_match(&alist_3, "id1", "value1"));
         assert!(alist_entry_match(&alist_3, "id2", "value2"));
 
         let alist_4 =
-            AListImpl::parse_from(&["id1", "=", "value1", "id2", "=", "value2", ","]).unwrap();
+            AList::parse_from(&["id1", "=", "value1", "id2", "=", "value2", ","]).unwrap();
         assert_eq!(alist_4.len(), 2);
         assert!(alist_entry_match(&alist_4, "id1", "value1"));
         assert!(alist_entry_match(&alist_4, "id2", "value2"));
 
-        let alist_5 = AListImpl::parse_from(&["id1", "value1"]);
+        let alist_5 = AList::parse_from(&["id1", "value1"]);
         assert!(!alist_5.is_ok(), alist_5.unwrap());
 
-        let alist_6 = AListImpl::parse_from(&["id1", "=", "value1", ":"]);
+        let alist_6 = AList::parse_from(&["id1", "=", "value1", ":"]);
         assert!(!alist_6.is_ok(), alist_6.unwrap());
     }
 
     #[test]
     fn parse_attrlist() {
         {
-            match AttrListImpl::parse_from(&[]) {
+            match AttrList::parse_from(&[]) {
                 Err((idx_err, err_msg)) => {
                     assert_eq!(idx_err, 0, "{}", err_msg);
                 }
@@ -747,7 +780,7 @@ mod tests {
         }
 
         {
-            match AttrListImpl::parse_from(&["[", "id1", "=", "value1", "]"]) {
+            match AttrList::parse_from(&["[", "id1", "=", "value1", "]"]) {
                 Err((idx_err, err_msg)) => {
                     assert!(false, "error at index {}: {}", idx_err, err_msg);
                 }
@@ -759,7 +792,7 @@ mod tests {
         }
 
         {
-            match AttrListImpl::parse_from(&["[", "]", "[", "id1", "=", "value1", "]"]) {
+            match AttrList::parse_from(&["[", "]", "[", "id1", "=", "value1", "]"]) {
                 Err((idx_err, err_msg)) => {
                     assert!(false, "error at index {}: {}", idx_err, err_msg);
                 }
@@ -771,12 +804,12 @@ mod tests {
 
         {
             let attr_list =
-                AttrListImpl::parse_from(&["[", "]", ",", "[", "id1", "=", "value1", "]"]);
+                AttrList::parse_from(&["[", "]", ",", "[", "id1", "=", "value1", "]"]);
             assert!(!attr_list.is_ok(), attr_list.unwrap());
         }
 
         {
-            let attr_list = AttrListImpl::parse_from(&["[", "]", "[", "id1", "value1", "]"]);
+            let attr_list = AttrList::parse_from(&["[", "]", "[", "id1", "value1", "]"]);
             assert!(!attr_list.is_ok(), attr_list.unwrap());
         }
     }
@@ -822,25 +855,25 @@ mod tests {
     fn parse_attr_stmt() {
         {
             let tokens: Vec<&str> = "[ ]".split_whitespace().collect();
-            let node_stmt = AttrStmt::parse_from(tokens.as_slice());
+            let node_stmt = AttrStmt::parse_from("", tokens.as_slice());
             assert!(!node_stmt.is_ok(), node_stmt.unwrap());
         }
 
         {
             let tokens: Vec<&str> = "graph [ ]".split_whitespace().collect();
-            let node_stmt = AttrStmt::parse_from(tokens.as_slice()).unwrap();
+            let node_stmt = AttrStmt::parse_from("", tokens.as_slice()).unwrap();
             assert_eq!(node_stmt.key, AttrStmtKey::GRAPH);
         }
 
         {
             let tokens: Vec<&str> = "edge".split_whitespace().collect();
-            let node_stmt = AttrStmt::parse_from(tokens.as_slice());
+            let node_stmt = AttrStmt::parse_from("", tokens.as_slice());
             assert!(!node_stmt.is_ok(), node_stmt.unwrap());
         }
 
         {
             let tokens: Vec<&str> = "other_keyword []".split_whitespace().collect();
-            let node_stmt = AttrStmt::parse_from(tokens.as_slice());
+            let node_stmt = AttrStmt::parse_from("", tokens.as_slice());
             assert!(!node_stmt.is_ok(), node_stmt.unwrap());
         }
     }
@@ -1006,6 +1039,7 @@ mod tests {
                 }
             };
         }
+
         {
             let tokens: Vec<&str> = "id1 -- id2 : id3".split_whitespace().collect();
             let maybe_stmt = Stmt::parse_from("--", tokens.as_slice());
@@ -1013,6 +1047,23 @@ mod tests {
                 Ok(stmt) => {
                     assert!(stmt.edge_stmt.is_some());
                     assert_eq!(stmt.edge_stmt.unwrap().node_id_or_subgraph.len(), 2);
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "graph [ ]".split_whitespace().collect();
+            let maybe_stmt = Stmt::parse_from("--", tokens.as_slice());
+            match maybe_stmt {
+                Ok(stmt) => {
+                    print!("{}", stmt.node_stmt.is_some());
+                    print!("{}", stmt.edge_stmt.is_some());
+                    print!("{}", stmt.attr_stmt.is_some());
+                    assert!(stmt.attr_stmt.is_some(), stmt);
+                    assert_eq!(stmt.attr_stmt.unwrap().key, AttrStmtKey::GRAPH);
                 }
                 Err((idx_err, err_msg)) => {
                     assert!(false, format!("{} {}", idx_err, err_msg));
