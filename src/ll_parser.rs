@@ -67,23 +67,6 @@ pub struct Stmt<'a> {
 
 impl<'a> Stmt<'a> {
     fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<Stmt<'a>, (usize, &'a str)> {
-        fn try_node_stmt<'b>(
-            tokens_internal: &[&'b str],
-            idx_err: &mut usize,
-            err_msg: &mut String,
-        ) -> Option<NodeStmt<'b>> {
-            match NodeStmt::parse_from(tokens_internal) {
-                Err((idx_err_node, err_msg_node)) => {
-                    if idx_err_node < *idx_err {
-                        *idx_err = idx_err_node;
-                        *err_msg = err_msg_node.to_string();
-                    }
-                    None
-                }
-                Ok(node) => Some(node),
-            }
-        };
-
         fn try_different_stmt<'b, T: Parsable<'b, Output = T>>(
             tokens_internal: &[&'b str],
             edgeop: &'b str,
@@ -108,7 +91,7 @@ impl<'a> Stmt<'a> {
         let mut idx_err: usize = tokens.len();
         let mut err_msg = String::new();
 
-        if let Some(node_stmt) = try_node_stmt(&tokens, &mut idx_err, &mut err_msg) {
+        if let Some(node_stmt) = try_different_stmt::<NodeStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg) {
             result.node_stmt = Some(node_stmt);
             Ok(result)
         } else if let Some(edge_stmt) =
@@ -425,8 +408,10 @@ pub struct NodeStmt<'a> {
     attr_list: Option<AttrListImpl<'a>>,
 }
 
-impl<'a> NodeStmt<'a> {
-    fn parse_from(tokens: &[&'a str]) -> Result<NodeStmt<'a>, (usize, &'a str)> {
+impl<'a> Parsable<'a> for NodeStmt<'a> {
+    type Output = NodeStmt<'a>;
+    // |edgeop| is ignored.
+    fn parse_from(_edgeop: &'a str, tokens: &[&'a str]) -> Result<Self::Output, (usize, &'a str)> {
         match tokens.iter().position(|x| x == &"[") {
             None => match NodeId::parse_from(tokens) {
                 Err(err_info) => Err(err_info),
@@ -799,13 +784,13 @@ mod tests {
     #[test]
     fn parse_node_stmt() {
         {
-            let node_stmt = NodeStmt::parse_from(&[]);
+            let node_stmt = NodeStmt::parse_from("", &[]);
             assert!(!node_stmt.is_ok(), node_stmt.unwrap());
         }
 
         {
             let tokens: Vec<&str> = "id1 : id2 : nw".split_whitespace().collect();
-            let node_stmt = NodeStmt::parse_from(tokens.as_slice()).unwrap();
+            let node_stmt = NodeStmt::parse_from("", tokens.as_slice()).unwrap();
             assert_eq!(node_stmt.id.id.name(), "id1");
             assert_eq!(
                 node_stmt.id.port.unwrap(),
@@ -818,7 +803,7 @@ mod tests {
 
         {
             let tokens: Vec<&str> = "id1 [ id2 = value2 ]".split_whitespace().collect();
-            let node_stmt = NodeStmt::parse_from(tokens.as_slice()).unwrap();
+            let node_stmt = NodeStmt::parse_from("", tokens.as_slice()).unwrap();
             assert_eq!(node_stmt.id.id.name(), "id1");
             assert_eq!(node_stmt.attr_list.unwrap().len(), 1)
         }
@@ -827,7 +812,7 @@ mod tests {
             let tokens: Vec<&str> = "id1 : id2 : sw [ id3 = value3 ] [ id4 = value4 ]"
                 .split_whitespace()
                 .collect();
-            let node_stmt = NodeStmt::parse_from(tokens.as_slice()).unwrap();
+            let node_stmt = NodeStmt::parse_from("", tokens.as_slice()).unwrap();
             assert_eq!(node_stmt.id.id.name(), "id1");
             assert_eq!(node_stmt.attr_list.unwrap().len(), 2)
         }
