@@ -91,7 +91,9 @@ impl<'a> Stmt<'a> {
         let mut idx_err: usize = tokens.len();
         let mut err_msg = String::new();
 
-        if let Some(node_stmt) = try_different_stmt::<NodeStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg) {
+        if let Some(node_stmt) =
+            try_different_stmt::<NodeStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg)
+        {
             result.node_stmt = Some(node_stmt);
             Ok(result)
         } else if let Some(edge_stmt) =
@@ -213,6 +215,29 @@ impl<'a> Port<'a> {
     }
 }
 
+struct IdWrapper<'a>(dot::Id<'a>);
+
+impl<'a> fmt::Debug for IdWrapper<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Id({:?})", self.0.as_slice())
+    }
+}
+
+impl<'a> PartialEq<str> for IdWrapper<'a> {
+    fn eq(&self, other: &str) -> bool {
+        self.0.as_slice() == other
+    }
+}
+
+impl<'a> IdWrapper<'a> {
+    fn new(name: &'a str) -> Result<IdWrapper<'a>, ()> {
+        match dot::Id::new(name) {
+            Err(_) => Err(()),
+            Ok(id) => Ok(IdWrapper(id)),
+        }
+    }
+}
+
 pub struct NodeId<'a> {
     id: dot::Id<'a>,
     port: Option<Port<'a>>,
@@ -262,26 +287,27 @@ impl<'a> NodeId<'a> {
     }
 }
 
-// define AListImpl so it's easy to change to another impl.
-type AListImpl<'a> = HashMap<std::borrow::Cow<'a, str>, dot::Id<'a>>;
+struct AList<'a>(HashMap<std::borrow::Cow<'a, str>, IdWrapper<'a>>);
 
-trait AList {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AListImpl<'a>, ()>;
+impl<'a> fmt::Debug for AList<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
 }
 
-impl AList for AListImpl<'_> {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<AListImpl<'a>, ()> {
-        fn parse_helper<'b>(tokens: &[&'b str], slice_idx: usize) -> Result<AListImpl<'b>, ()> {
-            match AListImpl::parse_from(&tokens[slice_idx..]) {
+impl<'a> AList<'a> {
+    fn parse_from(tokens: &[&'a str]) -> Result<AList<'a>, ()> {
+        fn parse_helper<'b>(tokens: &[&'b str], slice_idx: usize) -> Result<AList<'b>, ()> {
+            match AList::parse_from(&tokens[slice_idx..]) {
                 Err(err_msg) => Err(err_msg),
                 Ok(mut sub_list) => {
                     if tokens[1] != "=" {
                         Err(())
                     } else {
-                        match dot::Id::new(tokens[2]) {
+                        match IdWrapper::new(tokens[2]) {
                             Err(_) => Err(()),
                             Ok(id) => {
-                                sub_list.insert(std::borrow::Cow::Borrowed(tokens[0]), id);
+                                sub_list.0.insert(std::borrow::Cow::Borrowed(tokens[0]), id);
                                 Ok(sub_list)
                             }
                         }
@@ -291,7 +317,7 @@ impl AList for AListImpl<'_> {
         };
 
         match tokens.len() {
-            0 => Ok(HashMap::new()),
+            0 => Ok(AList::new()),
             // exclusive range is experimental
             1 => Err(()),
             2 => Err(()),
@@ -303,9 +329,21 @@ impl AList for AListImpl<'_> {
             },
         }
     }
+
+    fn new() -> AList<'a> {
+        AList(HashMap::new())
+    }
+
+    fn get(&self, key: &str) -> Option<&IdWrapper<'a>> {
+        self.0.get(std::borrow::Borrow::borrow(key))
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
-type AttrListImpl<'a> = Vec<AListImpl<'a>>;
+type AttrListImpl<'a> = Vec<AList<'a>>;
 
 trait AttrList {
     fn parse_from<'a>(tokens: &[&'a str]) -> Result<AttrListImpl<'a>, (usize, &'a str)>;
@@ -327,7 +365,7 @@ impl AttrList for AttrListImpl<'_> {
                                     Err((idx_err + idx_right_bracket + 1, err_msg))
                                 }
                                 Ok(mut sub_attr_list) => {
-                                    match AListImpl::parse_from(&tokens[1..idx_right_bracket]) {
+                                    match AList::parse_from(&tokens[1..idx_right_bracket]) {
                                         Err(_) => Err((1, &"internal error")),
                                         Ok(a_list) => {
                                             sub_attr_list.push(a_list);
@@ -669,6 +707,14 @@ mod tests {
             ),
             "Port{id=None, compass=Some(\"NE\")}"
         );
+        {
+            let mut alist = AList::new();
+            alist.0.insert(
+                std::borrow::Cow::Borrowed("a"),
+                IdWrapper::new("a1").unwrap(),
+            );
+            assert_eq!(format!("{:?}", alist), "{\"a\": Id(\"a1\")}");
+        }
     }
 
     #[test]
@@ -697,39 +743,35 @@ mod tests {
     }
 
     // Helper function to check if (key, value) exists in |alist|.
-    fn alist_entry_match(alist: &AListImpl, key: &str, value: &str) -> bool {
-        alist
-            .get(std::borrow::Borrow::borrow(key))
-            .unwrap()
-            .as_slice()
-            == value
+    fn alist_entry_match(alist: &AList, key: &str, value: &str) -> bool {
+        alist.get(key).unwrap() == value
     }
 
     #[test]
     fn parse_alist() {
-        let alist_1 = AListImpl::parse_from(&[]).unwrap();
+        let alist_1 = AList::parse_from(&[]).unwrap();
         assert_eq!(alist_1.len(), 0);
 
-        let alist_2 = AListImpl::parse_from(&["id1", "=", "value1"]).unwrap();
+        let alist_2 = AList::parse_from(&["id1", "=", "value1"]).unwrap();
         assert_eq!(alist_2.len(), 1);
         assert!(alist_entry_match(&alist_2, "id1", "value1"));
 
         let alist_3 =
-            AListImpl::parse_from(&["id1", "=", "value1", ";", "id2", "=", "value2"]).unwrap();
+            AList::parse_from(&["id1", "=", "value1", ";", "id2", "=", "value2"]).unwrap();
         assert_eq!(alist_3.len(), 2);
         assert!(alist_entry_match(&alist_3, "id1", "value1"));
         assert!(alist_entry_match(&alist_3, "id2", "value2"));
 
         let alist_4 =
-            AListImpl::parse_from(&["id1", "=", "value1", "id2", "=", "value2", ","]).unwrap();
+            AList::parse_from(&["id1", "=", "value1", "id2", "=", "value2", ","]).unwrap();
         assert_eq!(alist_4.len(), 2);
         assert!(alist_entry_match(&alist_4, "id1", "value1"));
         assert!(alist_entry_match(&alist_4, "id2", "value2"));
 
-        let alist_5 = AListImpl::parse_from(&["id1", "value1"]);
+        let alist_5 = AList::parse_from(&["id1", "value1"]);
         assert!(!alist_5.is_ok(), alist_5.unwrap());
 
-        let alist_6 = AListImpl::parse_from(&["id1", "=", "value1", ":"]);
+        let alist_6 = AList::parse_from(&["id1", "=", "value1", ":"]);
         assert!(!alist_6.is_ok(), alist_6.unwrap());
     }
 
