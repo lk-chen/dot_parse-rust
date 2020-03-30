@@ -19,6 +19,11 @@ fn unwrap_to_printable<'a>(id: &'a Option<dot::Id<'_>>) -> Option<&'a str> {
     }
 }
 
+trait Parsable<'t> {
+    type Output;
+    fn parse_from(edgeop: &'t str, tokens: &[&'t str]) -> Result<Self::Output, (usize, &'t str)>;
+}
+
 #[derive(Copy, Clone)]
 enum CompassPt {
     N,
@@ -62,10 +67,11 @@ pub struct Stmt<'a> {
 
 impl<'a> Stmt<'a> {
     fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<Stmt<'a>, (usize, &'a str)> {
-        fn try_node_stmt<'b>(tokens_internal: &[&'b str],
-                             idx_err: &mut usize,
-                             err_msg: &mut String)
-         -> Option<NodeStmt<'b>> {
+        fn try_node_stmt<'b>(
+            tokens_internal: &[&'b str],
+            idx_err: &mut usize,
+            err_msg: &mut String,
+        ) -> Option<NodeStmt<'b>> {
             match NodeStmt::parse_from(tokens_internal) {
                 Err((idx_err_node, err_msg_node)) => {
                     if idx_err_node < *idx_err {
@@ -74,18 +80,17 @@ impl<'a> Stmt<'a> {
                     }
                     None
                 }
-                Ok(node) => {
-                    Some(node)
-                }
+                Ok(node) => Some(node),
             }
         };
 
-        fn try_edge_stmt<'b>(tokens_internal: &[&'b str],
-                             edgeop: &'b str,
-                             idx_err: &mut usize,
-                             err_msg: &mut String)
-         -> Option<EdgeStmt<'b>> {
-            match EdgeStmt::parse_from(&edgeop, &tokens_internal) {
+        fn try_different_stmt<'b, T: Parsable<'b, Output = T>>(
+            tokens_internal: &[&'b str],
+            edgeop: &'b str,
+            idx_err: &mut usize,
+            err_msg: &mut String,
+        ) -> Option<T> {
+            match T::parse_from(&edgeop, &tokens_internal) {
                 Err((idx_err_edge, err_msg_edge)) => {
                     if idx_err_edge < *idx_err {
                         *idx_err = idx_err_edge;
@@ -93,11 +98,9 @@ impl<'a> Stmt<'a> {
                     }
                     None
                 }
-                Ok(edge) => {
-                    Some(edge)
-                }
+                Ok(stmt) => Some(stmt),
             }
-        };
+        }
 
         let mut result = Stmt {
             ..Default::default()
@@ -108,7 +111,9 @@ impl<'a> Stmt<'a> {
         if let Some(node_stmt) = try_node_stmt(&tokens, &mut idx_err, &mut err_msg) {
             result.node_stmt = Some(node_stmt);
             Ok(result)
-        } else if let Some(edge_stmt) = try_edge_stmt(&tokens, &edgeop, &mut idx_err, &mut err_msg) {
+        } else if let Some(edge_stmt) =
+            try_different_stmt::<EdgeStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg)
+        {
             result.edge_stmt = Some(edge_stmt);
             Ok(result)
         } else {
@@ -591,8 +596,9 @@ pub struct EdgeStmt<'a> {
     attr_list: Option<AttrListImpl<'a>>,
 }
 
-impl<'a> EdgeStmt<'a> {
-    fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<EdgeStmt<'a>, (usize, &'a str)> {
+impl<'a> Parsable<'a> for EdgeStmt<'a> {
+    type Output = EdgeStmt<'a>;
+    fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<Self::Output, (usize, &'a str)> {
         let parse_edge = |idx_edge_rhs: usize,
                           tokens_internal: &[&'a str]|
          -> Result<EdgeStmt<'a>, (usize, &'a str)> {
@@ -1015,7 +1021,6 @@ mod tests {
                 }
             };
         }
-        
         {
             let tokens: Vec<&str> = "id1 -- id2 : id3".split_whitespace().collect();
             let maybe_stmt = Stmt::parse_from("--", tokens.as_slice());
