@@ -80,6 +80,25 @@ impl<'a> Stmt<'a> {
             }
         };
 
+        fn try_edge_stmt<'b>(tokens_internal: &[&'b str],
+                             edgeop: &'b str,
+                             idx_err: &mut usize,
+                             err_msg: &mut String)
+         -> Option<EdgeStmt<'b>> {
+            match EdgeStmt::parse_from(&edgeop, &tokens_internal) {
+                Err((idx_err_edge, err_msg_edge)) => {
+                    if idx_err_edge < *idx_err {
+                        *idx_err = idx_err_edge;
+                        *err_msg = err_msg_edge.to_string();
+                    }
+                    None
+                }
+                Ok(edge) => {
+                    Some(edge)
+                }
+            }
+        };
+
         let mut result = Stmt {
             ..Default::default()
         };
@@ -88,6 +107,9 @@ impl<'a> Stmt<'a> {
 
         if let Some(node_stmt) = try_node_stmt(&tokens, &mut idx_err, &mut err_msg) {
             result.node_stmt = Some(node_stmt);
+            Ok(result)
+        } else if let Some(edge_stmt) = try_edge_stmt(&tokens, &edgeop, &mut idx_err, &mut err_msg) {
+            result.edge_stmt = Some(edge_stmt);
             Ok(result)
         } else {
             Err((0, ""))
@@ -979,13 +1001,33 @@ mod tests {
     }
 
     #[test]
-    fn ddd() {
-        fn foo(a: &mut &str) {
-            *a = "foo";
+    fn parse_stmt() {
+        {
+            let tokens: Vec<&str> = "id1 : id2".split_whitespace().collect();
+            let maybe_stmt = Stmt::parse_from("--", tokens.as_slice());
+            match maybe_stmt {
+                Ok(stmt) => {
+                    assert!(stmt.node_stmt.is_some());
+                    assert_eq!(stmt.node_stmt.unwrap().id.id.name(), "id1")
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
         }
-        let mut b: &str = "bar";
-        assert_eq!(b, "bar");
-        foo(&mut b);
-        assert_eq!(b, "foo");
+        
+        {
+            let tokens: Vec<&str> = "id1 -- id2 : id3".split_whitespace().collect();
+            let maybe_stmt = Stmt::parse_from("--", tokens.as_slice());
+            match maybe_stmt {
+                Ok(stmt) => {
+                    assert!(stmt.edge_stmt.is_some());
+                    assert_eq!(stmt.edge_stmt.unwrap().node_id_or_subgraph.len(), 2);
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
     }
 }
