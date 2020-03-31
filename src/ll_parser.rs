@@ -56,6 +56,27 @@ impl fmt::Debug for CompassPt {
     }
 }
 
+// This is to help parse: ID '=' ID.
+struct AssignmentStmt<'a> {
+    lhs: IdWrapper<'a>,
+    rhs: IdWrapper<'a>,
+}
+
+impl<'a> Parsable<'a> for AssignmentStmt<'a> {
+    type Output = AssignmentStmt<'a>;
+    // |edgeop| is ignored.
+    fn parse_from(_edgeop: &'a str, tokens: &[&'a str]) -> Result<Self::Output, (usize, &'a str)> {
+        match &tokens[..] {
+            [lhs_str, "=", rhs_str] => match (IdWrapper::new(lhs_str), IdWrapper::new(rhs_str)) {
+                (Ok(lhs), Ok(rhs)) => Ok(AssignmentStmt { lhs: lhs, rhs: rhs }),
+                (Err(_), _) => Err((0, "Invalid ID")),
+                (_, Err(_)) => Err((2, "Invalid ID")),
+            },
+            _ => Err((1, "Expect '='")),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Stmt<'a> {
     node_stmt: Option<NodeStmt<'a>>,
@@ -307,31 +328,29 @@ impl<'a> fmt::Debug for AList<'a> {
 }
 
 impl<'a> AList<'a> {
-    fn parse_from(tokens: &[&'a str]) -> Result<AList<'a>, ()> {
-        fn parse_helper<'b>(tokens: &[&'b str], slice_idx: usize) -> Result<AList<'b>, ()> {
-            match AList::parse_from(&tokens[slice_idx..]) {
-                Err(err_msg) => Err(err_msg),
-                Ok(mut sub_list) => {
-                    if tokens[1] != "=" {
-                        Err(())
-                    } else {
-                        match IdWrapper::new(tokens[2]) {
-                            Err(_) => Err(()),
-                            Ok(id) => {
-                                sub_list.0.insert(std::borrow::Cow::Borrowed(tokens[0]), id);
-                                Ok(sub_list)
-                            }
-                        }
-                    }
+    fn parse_from(tokens: &[&'a str]) -> Result<AList<'a>, (usize, &'a str)> {
+        fn parse_helper<'b>(
+            tokens: &[&'b str],
+            slice_idx: usize,
+        ) -> Result<AList<'b>, (usize, &'b str)> {
+            match (
+                AssignmentStmt::parse_from("", &tokens[0..3]),
+                AList::parse_from(&tokens[slice_idx..]),
+            ) {
+                (Ok(assignment), Ok(mut sub_list)) => {
+                    sub_list.0.insert(assignment.lhs.0.name(), assignment.rhs);
+                    Ok(sub_list)
                 }
+                (Err(err_info), _) => Err(err_info),
+                (_, Err((idx_err, err_msg))) => Err((idx_err + 3, err_msg)),
             }
         };
 
         match tokens.len() {
             0 => Ok(AList::new()),
             // exclusive range is experimental
-            1 => Err(()),
-            2 => Err(()),
+            1 => Err((0, "Expecting assignment statement")),
+            2 => Err((0, "Expecting assignment statement")),
             3 => parse_helper(tokens, 3),
             _ => match tokens[3] {
                 ";" => parse_helper(tokens, 4),
