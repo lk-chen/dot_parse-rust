@@ -82,8 +82,8 @@ pub struct Stmt<'a> {
     node_stmt: Option<NodeStmt<'a>>,
     edge_stmt: Option<EdgeStmt<'a>>,
     attr_stmt: Option<AttrStmt<'a>>,
+    assign_stmt: Option<AssignmentStmt<'a>>,
     subgraph: Option<SubGraph<'a>>,
-    // key_value: (dot::Id<'a>, dot::Id<'a>),
 }
 
 impl<'a> Stmt<'a> {
@@ -126,6 +126,11 @@ impl<'a> Stmt<'a> {
             try_different_stmt::<AttrStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg)
         {
             result.attr_stmt = Some(attr_stmt);
+            Ok(result)
+        } else if let Some(assign_stmt) =
+            try_different_stmt::<AssignmentStmt>(&tokens, &edgeop, &mut idx_err, &mut err_msg)
+        {
+            result.assign_stmt = Some(assign_stmt);
             Ok(result)
         } else {
             Err((0, ""))
@@ -1123,6 +1128,22 @@ mod tests {
                 Ok(stmt) => {
                     assert!(stmt.attr_stmt.is_some(), stmt);
                     assert_eq!(stmt.attr_stmt.unwrap().key, AttrStmtKey::GRAPH);
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "id1 = value1".split_whitespace().collect();
+            let maybe_stmt = Stmt::parse_from("--", tokens.as_slice());
+            match maybe_stmt {
+                Ok(stmt) => {
+                    assert!(stmt.assign_stmt.is_some(), stmt);
+                    let assign_stmt = stmt.assign_stmt.unwrap();
+                    assert_eq!(assign_stmt.lhs.0.as_slice(), "id1");
+                    assert_eq!(assign_stmt.rhs.0.as_slice(), "value1");
                 }
                 Err((idx_err, err_msg)) => {
                     assert!(false, format!("{} {}", idx_err, err_msg));
