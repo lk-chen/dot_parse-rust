@@ -132,6 +132,11 @@ impl<'a> Stmt<'a> {
         {
             result.assign_stmt = Some(assign_stmt);
             Ok(result)
+        } else if let Some(sub_graph) =
+            try_different_stmt::<SubGraph>(&tokens, &edgeop, &mut idx_err, &mut err_msg)
+        {
+            result.subgraph = Some(sub_graph);
+            Ok(result)
         } else {
             Err((0, ""))
         }
@@ -529,8 +534,10 @@ pub struct SubGraph<'a> {
     stmt_list: StmtListImpl<'a>,
 }
 
-impl<'a> SubGraph<'a> {
-    fn parse_from(tokens: &[&'a str]) -> Result<SubGraph<'a>, (usize, &'a str)> {
+impl<'a> Parsable<'a> for SubGraph<'a> {
+    type Output = SubGraph<'a>;
+    // |edgeop| is ignored.
+    fn parse_from(_edgeop: &'a str, tokens: &[&'a str]) -> Result<SubGraph<'a>, (usize, &'a str)> {
         let parse_stmt_list_and_return = |id: Option<dot::Id<'a>>,
                                           id_stmt_start: usize|
          -> Result<SubGraph<'a>, (usize, &'a str)> {
@@ -570,7 +577,7 @@ type NodeOrSubgraph<'b> = (Option<NodeId<'b>>, Option<SubGraph<'b>>, (usize, &'b
 fn parse_node_or_subgraph<'a>(tokens_n_s: &[&'a str]) -> NodeOrSubgraph<'a> {
     match (
         NodeId::parse_from(tokens_n_s),
-        SubGraph::parse_from(tokens_n_s),
+        SubGraph::parse_from("", tokens_n_s),
     ) {
         (Ok(node_id), _) => (Some(node_id), None, (0, "")),
         (_, Ok(subgraph)) => (None, Some(subgraph), (0, "")),
@@ -949,7 +956,7 @@ mod tests {
     fn parse_subgraph() {
         {
             let tokens: Vec<&str> = "{ }".split_whitespace().collect();
-            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            let maybe_subgraph = SubGraph::parse_from("", tokens.as_slice());
             match maybe_subgraph {
                 Ok(subgraph) => {
                     assert!(subgraph.id.is_none());
@@ -962,7 +969,7 @@ mod tests {
 
         {
             let tokens: Vec<&str> = "subgraph { }".split_whitespace().collect();
-            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            let maybe_subgraph = SubGraph::parse_from("", tokens.as_slice());
             match maybe_subgraph {
                 Ok(subgraph) => {
                     assert!(subgraph.id.is_none());
@@ -975,7 +982,7 @@ mod tests {
 
         {
             let tokens: Vec<&str> = "subgraph id1 { }".split_whitespace().collect();
-            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            let maybe_subgraph = SubGraph::parse_from("", tokens.as_slice());
             match maybe_subgraph {
                 Ok(subgraph) => {
                     assert!(subgraph.id.is_some());
@@ -989,7 +996,7 @@ mod tests {
 
         {
             let tokens: Vec<&str> = "subgraph [ ]".split_whitespace().collect();
-            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            let maybe_subgraph = SubGraph::parse_from("", tokens.as_slice());
             match maybe_subgraph {
                 Ok(subgraph) => {
                     assert!(false, subgraph);
@@ -1002,7 +1009,7 @@ mod tests {
 
         {
             let tokens: Vec<&str> = "wrong_keyword [ ]".split_whitespace().collect();
-            let maybe_subgraph = SubGraph::parse_from(tokens.as_slice());
+            let maybe_subgraph = SubGraph::parse_from("", tokens.as_slice());
             match maybe_subgraph {
                 Ok(subgraph) => {
                     assert!(false, subgraph);
@@ -1144,6 +1151,19 @@ mod tests {
                     let assign_stmt = stmt.assign_stmt.unwrap();
                     assert_eq!(assign_stmt.lhs.0.as_slice(), "id1");
                     assert_eq!(assign_stmt.rhs.0.as_slice(), "value1");
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+
+        {
+            let tokens: Vec<&str> = "subgraph { }".split_whitespace().collect();
+            let maybe_stmt = Stmt::parse_from("--", tokens.as_slice());
+            match maybe_stmt {
+                Ok(stmt) => {
+                    assert!(stmt.subgraph.is_some(), stmt);
                 }
                 Err((idx_err, err_msg)) => {
                     assert!(false, format!("{} {}", idx_err, err_msg));
