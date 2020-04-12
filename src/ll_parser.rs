@@ -153,11 +153,14 @@ impl StmtList<'_> {
         if tokens.len() == 0 {
             return Ok(StmtList(vec![]));
         }
+        if let Ok(stmt) = Stmt::parse_from(edgeop, tokens) {
+            return Ok(StmtList(vec![stmt]));
+        }
         for (token_idx, token) in tokens.iter().enumerate() {
             // TODO: per standard, ';' is optional.
             if token == &";" {
                 match (
-                    Stmt::parse_from(edgeop, &tokens[0..token_idx - 1]),
+                    Stmt::parse_from(edgeop, &tokens[0..token_idx]),
                     StmtList::parse_from(edgeop, &tokens[token_idx + 1..]),
                 ) {
                     (Ok(stmt), Ok(mut stmt_list)) => {
@@ -597,7 +600,6 @@ fn parse_node_or_subgraph<'a>(tokens_n_s: &[&'a str]) -> NodeOrSubgraph<'a> {
         (_, Ok(subgraph)) => (None, Some(subgraph), (0, "")),
         (Err((idx_err_node, err_msg_node)), Err((idx_err_subg, err_msg_subg))) => {
             // If we move more forward when parsing node, guess it's a node.
-            // println!("")
             if idx_err_node >= idx_err_subg {
                 (None, None, (idx_err_node, err_msg_node))
             } else {
@@ -1178,6 +1180,25 @@ mod tests {
             match maybe_stmt {
                 Ok(stmt) => {
                     assert!(stmt.subgraph.is_some(), stmt);
+                }
+                Err((idx_err, err_msg)) => {
+                    assert!(false, format!("{} {}", idx_err, err_msg));
+                }
+            };
+        }
+    }
+
+    #[test]
+    fn parse_stmt_list() {
+        {
+            let tokens: Vec<&str> =
+                "id1 : id2 ; id3 : id4 ; node1 [ ] ; node2 -- node3 ; subgraph { }"
+                    .split_whitespace()
+                    .collect();
+            let maybe_stmtlist = StmtList::parse_from("--", tokens.as_slice());
+            match maybe_stmtlist {
+                Ok(stmtlist) => {
+                    assert_eq!(stmtlist.0.len(), 5);
                 }
                 Err((idx_err, err_msg)) => {
                     assert!(false, format!("{} {}", idx_err, err_msg));
