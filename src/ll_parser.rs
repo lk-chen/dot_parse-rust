@@ -747,10 +747,59 @@ impl<'a> Parsable<'a> for EdgeStmt<'a> {
 }
 
 pub struct Graph<'a> {
-    strict: bool,
+    // TODO: apply strict limitation
+    // strict: bool,
     kind: dot::Kind,
-    id: Option<dot::Id<'a>>,
+    id: Option<IdWrapper<'a>>,
     stmt_list: StmtList<'a>,
+}
+
+impl Graph<'_> {
+    fn parse_from<'a>(tokens: &[&'a str]) -> Option<Graph<'a>> {
+        if tokens.len() < 3 {
+            return None;
+        }
+        if tokens.last().unwrap() != &"}" {
+            return None;
+        }
+        if tokens[0] == "strict" {
+            return Graph::parse_from(&tokens[1..]);
+        }
+        let edgeop: &str = match tokens[0] {
+            "graph" => "--",
+            "digraph" => "->",
+            _ => return None,
+        };
+        let kind: dot::Kind = match tokens[0] {
+            "graph" => dot::Kind::Graph,
+            "digraph" => dot::Kind::Digraph,
+            _ => return None,
+        };
+        let mut id: Option<IdWrapper<'a>> = None;
+        let tokens_stmtlist = match (tokens[0], tokens[1]) {
+            ("{", _) => &tokens[1..tokens.len() - 1],
+            (id_str, "{") => {
+                match IdWrapper::new(id_str) {
+                    Ok(id_wrapper) => {
+                        id = Some(id_wrapper);
+                    }
+                    _ => {}
+                }
+                &tokens[2..tokens.len() - 1]
+            }
+            _ => return None,
+        };
+        match StmtList::parse_from(edgeop, tokens_stmtlist) {
+            Ok(stmtlist) => {
+                return Some(Graph {
+                    kind: kind,
+                    id: id,
+                    stmt_list: stmtlist,
+                })
+            }
+            Err(_) => return None,
+        }
+    }
 }
 
 #[cfg(test)]
