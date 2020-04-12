@@ -19,7 +19,7 @@ fn main() {
     };
     let tokens: Vec<&str> = graph_str.split_whitespace().collect();
     if let Some(graph) = libdot_parse::Graph::parse_from(tokens.as_slice()) {
-        // println!("{:?}", graph)
+        println!("{:?}", graph)
     } else {
         println!("FAILED")
     }

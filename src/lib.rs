@@ -86,6 +86,27 @@ pub struct Stmt<'a> {
     subgraph: Option<SubGraph<'a>>,
 }
 
+impl fmt::Debug for Stmt<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.node_stmt.is_some() {
+            return write!(f, "NodeStmt{{..}}")
+        }
+        if self.edge_stmt.is_some() {
+            return write!(f, "EdgeStmt{{..}}")
+        }
+        if self.attr_stmt.is_some() {
+            return write!(f, "AttrStmt{{..}}")
+        }
+        if self.assign_stmt.is_some() {
+            return write!(f, "AssignStmt{{..}}")
+        }
+        if self.subgraph.is_some() {
+            return write!(f, "SubGraph{{..}}")
+        }
+        return Err(fmt::Error);
+    }
+}
+
 impl<'a> Stmt<'a> {
     fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<Stmt<'a>, (usize, &'a str)> {
         fn try_different_stmt<'b, T: Parsable<'b, Output = T>>(
@@ -144,6 +165,12 @@ impl<'a> Stmt<'a> {
 }
 
 struct StmtList<'a>(Vec<Stmt<'a>>);
+
+impl fmt::Debug for StmtList<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.0)
+    }
+}
 
 impl StmtList<'_> {
     fn parse_from<'a>(
@@ -752,6 +779,24 @@ pub struct Graph<'a> {
     kind: dot::Kind,
     id: Option<IdWrapper<'a>>,
     stmt_list: StmtList<'a>,
+}
+
+impl fmt::Debug for Graph<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let kind_str = match self.kind {
+            dot::Kind::Graph => "graph",
+            dot::Kind::Digraph => "digraph",
+        };
+        write!(
+            f,
+            "Graph{{
+    kind: {:?},
+    id: {:?},
+    stmt_list: {:?}
+}}",
+            kind_str, self.id, self.stmt_list
+        )
+    }
 }
 
 impl Graph<'_> {
