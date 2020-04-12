@@ -3,6 +3,8 @@ name = "dot_parse"
 version = "0.2.0"
 authors = ["lk-chen <lkchen_github@outlook.com>"]
 edition = "2018"
+description = "A package to parse DOT-format tokens"
+license = "MIT"
 
 [lib]
 name = "libdot_parse"
