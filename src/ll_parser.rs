@@ -143,19 +143,33 @@ impl<'a> Stmt<'a> {
     }
 }
 
-type StmtListImpl<'a> = Vec<Stmt<'a>>;
+struct StmtList<'a>(Vec<Stmt<'a>>);
 
-trait StmtList {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<StmtListImpl<'a>, (usize, &'a str)>;
-}
-
-impl StmtList for StmtListImpl<'_> {
-    fn parse_from<'a>(tokens: &[&'a str]) -> Result<StmtListImpl<'a>, (usize, &'a str)> {
-        // TODO: finish.
-        match tokens.len() {
-            0 => Ok(StmtListImpl::new()),
-            _ => Err((0, "no impl")),
+impl StmtList<'_> {
+    fn parse_from<'a>(
+        edgeop: &'a str,
+        tokens: &[&'a str],
+    ) -> Result<StmtList<'a>, (usize, &'a str)> {
+        if tokens.len() == 0 {
+            return Ok(StmtList(vec![]));
         }
+        for (token_idx, token) in tokens.iter().enumerate() {
+            // TODO: per standard, ';' is optional.
+            if token == &";" {
+                match (
+                    Stmt::parse_from(edgeop, &tokens[0..token_idx - 1]),
+                    StmtList::parse_from(edgeop, &tokens[token_idx + 1..]),
+                ) {
+                    (Ok(stmt), Ok(mut stmt_list)) => {
+                        stmt_list.0.insert(0, stmt);
+                        return Ok(stmt_list);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // TODO: give reasonable err position.
+        Err((0, "failed parsing statement list."))
     }
 }
 
@@ -531,17 +545,17 @@ impl<'a> Parsable<'a> for NodeStmt<'a> {
 
 pub struct SubGraph<'a> {
     id: Option<dot::Id<'a>>,
-    stmt_list: StmtListImpl<'a>,
+    stmt_list: StmtList<'a>,
 }
 
 impl<'a> Parsable<'a> for SubGraph<'a> {
     type Output = SubGraph<'a>;
     // |edgeop| is ignored.
-    fn parse_from(_edgeop: &'a str, tokens: &[&'a str]) -> Result<SubGraph<'a>, (usize, &'a str)> {
+    fn parse_from(edgeop: &'a str, tokens: &[&'a str]) -> Result<SubGraph<'a>, (usize, &'a str)> {
         let parse_stmt_list_and_return = |id: Option<dot::Id<'a>>,
                                           id_stmt_start: usize|
          -> Result<SubGraph<'a>, (usize, &'a str)> {
-            match StmtListImpl::parse_from(&tokens[id_stmt_start..tokens.len() - 1]) {
+            match StmtList::parse_from(edgeop, &tokens[id_stmt_start..tokens.len() - 1]) {
                 Err((idx_err, err_msg)) => Err((idx_err + id_stmt_start, err_msg)),
                 Ok(stmt_list) => Ok(SubGraph {
                     id: id,
@@ -734,7 +748,7 @@ pub struct Graph<'a> {
     strict: bool,
     kind: dot::Kind,
     id: Option<dot::Id<'a>>,
-    stmt_list: StmtListImpl<'a>,
+    stmt_list: StmtList<'a>,
 }
 
 #[cfg(test)]
